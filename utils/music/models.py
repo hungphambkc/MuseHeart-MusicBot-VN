@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from utils.client import BotCore
 
 exclude_tags = ["remix", "edit", "extend", "compilation", "mashup"]
+exclude_tags_2 = ["extend", "compilation", "mashup", "nightcore", "8d"]
 
 thread_archive_time = {
     60: 30,
@@ -296,6 +297,15 @@ class LavalinkTrack(wavelink.Track):
             self.info['sourceName']
         except:
             self.info['sourceName'] = 'LavalinkTrack'
+
+        try:
+            if (albumname:=fix_characters(self.info["pluginInfo"]["albumName"])) == self.title:
+                del self.info["pluginInfo"]["albumName"]
+                del self.info["pluginInfo"]["albumUrl"]
+            else:
+                self.info["pluginInfo"]["albumName"] = albumname
+        except KeyError:
+            pass
 
         try:
             self.info["extra"]
@@ -1276,7 +1286,7 @@ class LavalinkPlayer(wavelink.Player):
                         await asyncio.sleep(1.5)
                         await self.invoke_np(rpc_update=True)
                     else:
-                        await self.process_next()
+                        await self.process_next(clear_autoqueue=False)
                 await self.update_stage_topic()
             except Exception:
                 traceback.print_exc()
@@ -1323,7 +1333,7 @@ class LavalinkPlayer(wavelink.Player):
                 pass
             self.set_command_log(
                 emoji="🪫",
-                text="O player está no modo economia de recursos (esse modo será desativado automaticamente quando "
+                text="O player está no modo **[economia de recursos]** (esse modo será desativado automaticamente quando "
                      f"um membro entrar no canal <#{self.channel_id}>)."
             )
             self.update = True
@@ -1469,6 +1479,13 @@ class LavalinkPlayer(wavelink.Player):
                             exception = e
                             await asyncio.sleep(1.5)
                             continue
+
+                    if not [i in track_data.title.lower() for i in exclude_tags_2]:
+                        final_tracks = []
+                        for t in tracks:
+                            if not any((i in t.title.lower()) for i in exclude_tags_2):
+                                final_tracks.append(t)
+                        tracks = final_tracks or tracks
 
                 track = track_data
                 break
