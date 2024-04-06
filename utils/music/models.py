@@ -245,7 +245,7 @@ class LavalinkPlaylist:
             pass
 
         try:
-            self.data["type"] = plugininfo["type"]
+            self.data["playlistInfo"]["type"] = plugininfo["type"]
         except KeyError:
             pass
 
@@ -343,6 +343,13 @@ class LavalinkTrack(wavelink.Track):
         return self.title
 
     @property
+    def original_id(self) -> str:
+        try:
+            return self.info["extra"]["original_id"]
+        except KeyError:
+            return ""
+
+    @property
     def single_title(self) -> str:
         return self.title
 
@@ -357,9 +364,11 @@ class LavalinkTrack(wavelink.Track):
     @property
     def authors_md(self) -> str:
         try:
-            return f"[`{self.author}`](<{self.info['pluginInfo']['artistUrl']}>)"
+            if self.info['pluginInfo']['artistUrl']:
+                return f"[`{self.author}`](<{self.info['pluginInfo']['artistUrl']}>)"
         except KeyError:
-            return f"`{self.author}`"
+            pass
+        return f"`{self.author}`"
 
     @property
     def authors_string(self) -> str:
@@ -754,7 +763,7 @@ class LavalinkPlayer(wavelink.Player):
 
             self.start_time = disnake.utils.utcnow()
 
-            if not self.current.autoplay:
+            if not self.current.autoplay or self.current.requester == self.bot.user.id:
                 self.queue_autoplay.clear()
 
             if self.auto_pause:
@@ -1351,7 +1360,10 @@ class LavalinkPlayer(wavelink.Player):
 
         tracks_search = []
 
-        for t in self.played + self.queue_autoplay:
+        if self.current and self.current.duration < 9000:
+            tracks_search.append(self.current)
+
+        for t in reversed(self.failed_tracks + self.played):
 
             if len(tracks_search) > 4:
                 break
@@ -1368,8 +1380,6 @@ class LavalinkPlayer(wavelink.Player):
         exception = None
 
         if tracks_search:
-
-            tracks_search.reverse()
 
             self.locked = True
 
@@ -1877,6 +1887,8 @@ class LavalinkPlayer(wavelink.Player):
             description="**Não há músicas na fila... Adicione uma música ou use uma das opções abaixo.**",
             color=self.bot.get_color(self.guild.me)
         )
+
+        embed.set_thumbnail(url=self.bot.user.display_avatar.replace(size=512, static_format="png").url)
 
         if not self.keep_connected:
             embed.description += "\n\n**Nota:** `O Player será desligado automaticamente` " \
