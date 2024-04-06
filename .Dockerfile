@@ -1,5 +1,5 @@
 FROM python:3.10-slim
-COPY --from=openjdk:11-jdk-slim /usr/local/openjdk-11 /usr/local/openjdk-11
+COPY --from=openjdk:11.0.16-jdk-slim /usr/local/openjdk-11 /usr/local/openjdk-11
 
 ENV JAVA_HOME /usr/local/openjdk-11
 
