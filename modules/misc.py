@@ -254,13 +254,13 @@ class Misc(commands.Cog):
             interaction_invite = f"[`{disnake.utils.escape_markdown(str(self.bot.pool.controller_bot.user.name))}`]({disnake.utils.oauth_url(self.bot.pool.controller_bot.user.id)})"
 
         if cmd:=self.bot.get_command("setup"):
-            cmd_text = f"Se desejar, use o comando **/{cmd.name}** para criar um canal dedicado pra pedir " \
-                        "músicas sem comandos e deixar o music player fixo em um canal dedicado.\n\n"
+            cmd_text = f"If desired, use the command **/{cmd.name}** to create a dedicated channel to ask " \
+                        "songs without commands and leave the music player fixed to a dedicated channel.\n\n"
         else:
             cmd_text = ""
 
         if self.bot.config["SUPPORT_SERVER"]:
-            support_server = f"Caso tenha alguma dúvida ou queira acompanhar as últimas novidades, você pode entrar no meu [`servidor de suporte`]({self.bot.config['SUPPORT_SERVER']})"
+            support_server = f"If you have any questions or want to keep up with the latest news, you can log in to my [`support server`]({self.bot.config['SUPPORT_SERVER']})"
         else:
             support_server = ""
 
@@ -294,7 +294,7 @@ class Misc(commands.Cog):
                         embeds.append(
                             disnake.Embed(
                                 color=color,
-                                description=f"Olá! Agradeço muito por ter me adicionado no servidor: **{guild.name}** :)"
+                                description=f"Hello! Thank you very much for adding me to the server: **{guild.name}** :)"
                             ).set_image(url=image)
                         )
 
@@ -302,49 +302,49 @@ class Misc(commands.Cog):
                             embeds.append(
                                 disnake.Embed(
                                     color=color,
-                                    description=f"**Observação importante:** Meus comandos de barra funcionam através "
-                                                f"da seguinte aplicação: {interaction_invite}\n\n"
-                                                f"Caso os comandos da aplicação acima não sejam exibidos ao digitar "
-                                                f"barra (**/**) em um canal do servidor **{guild.name}** você terá que "
-                                                f"clicar no nome acima para integrar os comandos de barra no servidor "
-                                                f"**{guild.name}**.\n`Nota: Caso os comandos ainda não apareçam após "
-                                                f"integrar os comandos, talvez seu servidor tenha atingido o limite de "
-                                                f"bots com comandos de barra registrados.`"
+                                    description=f"**Important Note:** My slash commands work through "
+                                                f"of the following application: {interaction_invite}\n\n"
+                                                f"If the application commands above are not displayed when typing "
+                                                f"slash (**/**) in a server channel **{guild.name}** you will have to "
+                                                f"click on the name above to integrate the slash commands on the server "
+                                                f"**{guild.name}**.\n`Note: If the commands still do not appear after "
+                                                f"integrate the commands, perhaps your server has reached the limit of "
+                                                f"bots with registered slash commands.`"
                                 ).set_image(url=image)
                             )
                         else:
                             embeds.append(
                                 disnake.Embed(
                                     color=color,
-                                    description=f"Para ver todos os meus comandos use barra (**/**) no servidor " \
+                                    description=f"To see all my commands use forward slash (**/**) on the server " \
                                                  f"**{guild.name}**"
                                 ).set_image(url=image)
                             )
 
                         if prefix:
-                            prefix_msg = f"Meu prefixo no servidor **{guild.name}** é: **{prefix}**"
+                            prefix_msg = f"My prefix on the server **{guild.name}**is: **{prefix}**"
                         else:
                             prefix = self.bot.default_prefix
-                            prefix_msg = f"Meu prefixo padrão é **{prefix}**"
+                            prefix_msg = f"My default prefix is **{prefix}**"
 
                         embeds.append(
                             disnake.Embed(
                                 color=color,
-                                description=f"Também tenho comandos de texto por prefixo. {prefix_msg} (minha menção "
-                                            f"também funciona como prefixo). Pra ver todos os meus comandos de texto "
-                                            f"use **{prefix}help** em um canal do servidor **{guild.name}**. "
-                                            f"Caso queira alterar meu prefixo use o comando **{prefix}setprefix** "
-                                            f"(você pode ter um prefixo pessoal usando o comando "
+                                description=f"I also have text commands by prefix. {prefix_msg} (my mention "
+                                            f"also works as a prefix). To see all my text commands "
+                                            f"use **{prefix}help** on a server channel **{guild.name}**. "
+                                            f"If you want to change my prefix, use the command **{prefix}setprefix** "
+                                            f"(you can have a personal prefix using the command "
                                             f"**{prefix}setmyprefix**)."
                             ).set_image(url=image)
                         )
 
                         if bots_in_guild:
 
-                            msg = f"Notei que há outros bots no servidor **{guild.name}** no qual sou compatível com " \
-                                   f"o sistema de multi-voice: {', '.join(b.user.mention for b in bots_in_guild)}\n\n" \
-                                   f"Ao usar usar os comandos de música (ex: play) sem um dos bots conectado no canal, " \
-                                    "será usado um dos bots que estiver livre no servidor."
+                            msg = f"I noticed that there are other bots on the **{guild.name}** server that I am compatible with " \
+                                   f"the multi-voice system: {', '.join(b.user.mention for b in bots_in_guild)}\n\n" \
+                                   f"When using music commands (e.g. play) without one of the bots connected to the channel, " \
+                                    "one of the bots that is free on the server will be used."
 
                             if not self.bot.pool.config.get("MULTIVOICE_VIDEO_DEMO_URL"):
                                 embeds.append(
@@ -358,10 +358,10 @@ class Misc(commands.Cog):
                                 send_video = msg
 
                         elif bots_outside_guild and self.bot.config.get('MULTIVOICE_VIDEO_DEMO_URL'):
-                            send_video = "**Caso tenha demanda no seu servidor você também pode adicionar mais bots de músicas extras.\n" \
-                                         "Todos os bots compartilham o mesmo prefixo e comando de barra o que descarta a necessidade " \
-                                         f"de ficar decorando prefixos e comandos de barra de cada bot individualmente.\n\n" \
-                                         f"Confira o [vídeo]({self.bot.config['MULTIVOICE_VIDEO_DEMO_URL']}) demonstrando o uso de multi-bot na prática.**"
+                            send_video = "**If there is demand on your server, you can also add more extra music bots.\n" \
+                                         "All bots share the same prefix and slash command which eliminates the need " \
+                                         f"of memorizing prefixes and slash commands for each bot individually.\n\n" \
+                                         f"Check out the [video]({self.bot.config['MULTIVOICE_VIDEO_DEMO_URL']}) demonstrating the use of multi-bot in practice.**"
 
                         if support_server:
                             embeds.append(disnake.Embed(color=color, description=support_server).set_image(url=image))
@@ -370,7 +370,7 @@ class Misc(commands.Cog):
                             await entry.user.send(embeds=embeds, components=components)
                             if send_video:
                                 await asyncio.sleep(1)
-                                await entry.user.send(f"{send_video}\n\nConfira o [**vídeo**]({self.bot.config['MULTIVOICE_VIDEO_DEMO_URL']}) demonstrando essa funcionalidade.")
+                                await entry.user.send(f"{send_video}\n\nCheck out the [**video**]({self.bot.config['MULTIVOICE_VIDEO_DEMO_URL']}) demonstrating this functionality.")
                             return
                         except disnake.Forbidden:
                             pass
@@ -396,12 +396,12 @@ class Misc(commands.Cog):
             embeds.append(
                 disnake.Embed(
                     color=color,
-                    description=f"Olá! Para ver todos os meus comandos digite barra (**/**) e confira "
-                                f"os comandos da seguinte aplicação: {interaction_invite}\n\n"
-                                f"Caso os comandos da aplicação acima não sejam exibidos ao digitar barra (**/**) você "
-                                f"terá que clicar no nome acima para integrar os comandos de barra no seu servidor.\n"
-                                f"`Nota: Caso os comandos ainda não apareçam após integrar os comandos, talvez seu "
-                                f"servidor tenha atingido o limite de bots com comandos de barra registrados.`"
+                    description=f"Hello! To see all my commands type slash (**/**) and check "
+                                f"the commands for the following application: {interaction_invite}\n\n"
+                                f"If the application commands above are not displayed when typing slash (**/**) you "
+                                f"will have to click on the name above to integrate the slash commands on your server.\n"
+                                f"`Note: If the commands still do not appear after integrating the commands, your "
+                                f"server has reached the limit of bots with registered slash commands.`"
 
                 ).set_image(url=image)
             )
@@ -409,23 +409,23 @@ class Misc(commands.Cog):
         else:
             embeds.append(
                 disnake.Embed(
-                    color=color, description="Olá! Para ver todos os meus comandos use barra (**/**)"
+                    color=color, description="Hello! To see all my commands use forward slash (**/**)"
                 ).set_image(url=image)
             )
 
         if prefix:
-            prefix_msg = f"Meu prefixo no servidor é: **{prefix}**"
+            prefix_msg = f"My server prefix is: **{prefix}**"
         else:
             prefix = self.bot.default_prefix
-            prefix_msg = f"Meu prefixo padrão é **{prefix}**"
+            prefix_msg = f"My default prefix is: **{prefix}**"
 
         embeds.append(
             disnake.Embed(
                 color=color,
-                description=f"Também tenho comandos de texto por prefixo. {prefix_msg} (minha menção "
-                            f"também funciona como prefixo). Pra ver todos os meus comandos de texto use "
-                            f"**{prefix}help**. Caso queira alterar meu prefixo use o comando **{prefix}setprefix** "
-                            f"(você pode ter um prefixo pessoal usando o comando **{prefix}setmyprefix**)."
+                description=f"I also have text commands by prefix. {prefix_msg} (my mention "
+                            f"also works as a prefix). To see all my text commands use "
+                            f"**{prefix}help**. If you want to change my prefix, use the command **{prefix}setprefix** "
+                            f"(you can have a personal prefix using the command **{prefix}setmyprefix**)."
             ).set_image(url=image)
         )
 

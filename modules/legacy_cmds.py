@@ -108,7 +108,7 @@ class Owner(commands.Cog):
     @commands.is_owner()
     @commands.command(
         hidden=True, aliases=["gls", "lavalink", "lllist", "lavalinkservers"],
-        description="Baixar um arquivo com lista de servidores lavalink para usá-los no sistema de música."
+        description="Download a file with a list of lavalink servers to use them in the music system."
     )
     async def getlavaservers(self, ctx: CustomContext):
 
@@ -118,14 +118,14 @@ class Owner(commands.Cog):
 
         await ctx.send(
             embed=disnake.Embed(
-                description="**O arquivo lavalink.ini foi baixado com sucesso!\n"
-                            "Será necessário me reiniciar para usar os servidores deste arquivo.**"
+                description="**The lavalink.ini file has been downloaded successfully!\n"
+                            "I will need to restart myself to use the servers in this file.**"
             )
         )
 
     updatelavalink_flags = CommandArgparse()
     updatelavalink_flags.add_argument('-yml', '--yml', action='store_true',
-                                      help="Fazer download do arquivo application.yml.")
+                                      help="Download the application.yml file.")
     updatelavalink_flags.add_argument("-resetids", "-reset", "--resetids", "--reset",
                                       help="Resetar info de ids das músicas (útil pra evitar problemas com certas "
                                            "mudanças do lavaplayer/lavalink).", action="store_true")

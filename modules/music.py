@@ -131,7 +131,7 @@ class Music(commands.Cog):
 
         await self.update_cache()
 
-        await ctx.send("As músicas do link foram adicionadas com sucesso em cache.", delete_after=30)
+        await ctx.send("The songs in the link have been successfully added to the cache.", delete_after=30)
 
     @commands.is_owner()
     @commands.cooldown(1, 300, commands.BucketType.default)
@@ -149,9 +149,9 @@ class Music(commands.Cog):
 
         try:
             if not self.bot.pool.playlist_cache:
-                raise GenericError("**Seu cache de playlist está vazio...**")
+                raise GenericError("**Your playlist cache is empty...**")
         except KeyError:
-            raise GenericError(f"**Você ainda não usou o comando: {ctx.prefix}{self.addcache.name}**")
+            raise GenericError(f"**You haven't used the command yet: {ctx.prefix}{self.addcache.name}**")
 
         msg = None
 
@@ -192,7 +192,7 @@ class Music(commands.Cog):
 
             embed = disnake.Embed(
                 description=txt, color=self.bot.get_color(ctx.guild.me),
-                title=f"Playlist verificadas: {counter}/{amount}"
+                title=f"Verified Playlist: {counter}/{amount}"
             )
 
             if not msg:
@@ -209,11 +209,11 @@ class Music(commands.Cog):
         try:
             del self.bot.pool.playlist_cache[url]
         except KeyError:
-            raise GenericError("**Não há itens salvo em cache com a url informada...**")
+            raise GenericError("**There are no items saved in cache with the given url...**")
 
         await self.update_cache()
 
-        await ctx.send("As músicas do link foram removidas com sucesso do cache.", delete_after=30)
+        await ctx.send("The linked songs have been successfully removed from the cache.", delete_after=30)
 
     @commands.is_owner()
     @commands.command(hidden=True, aliases=["cc"])
@@ -5102,8 +5102,8 @@ class Music(commands.Cog):
 
                         if p.locked:
                             raise GenericError(
-                                "**Não é possível executar essa ação com o processamento da música em andamento "
-                                "(por favor aguarde mais alguns segundos e tente novamente).**")
+                                "**Cannot perform this action while music processing is in progress "
+                                "(please wait a few more seconds and try again).**")
 
                         player = p
                         bot = b
@@ -5163,7 +5163,7 @@ class Music(commands.Cog):
                         if control == PlayerControls.embed_forceplay and player.current and (player.current.uri.startswith(url) or url.startswith(player.current.uri)):
                             await self.check_stage_title(inter=interaction, bot=bot, player=player)
                             await player.seek(0)
-                            player.set_command_log("voltou para o início da música.", emoji="⏪")
+                            player.set_command_log("went back to the beginning of the song.", emoji="⏪")
                             await asyncio.sleep(3)
                             await player.update_stage_topic()
                             await asyncio.sleep(7)

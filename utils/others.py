@@ -388,15 +388,15 @@ async def send_idle_embed(
     except AttributeError:
         cmd = "/play"
 
-    embed = disnake.Embed(description="**Entre em um canal de voz e peça uma música aqui " +
-                                      ("no post" if is_forum else "no canal ou na conversa abaixo") +
-                                      f" (ou clique no botão abaixo ou use o comando {cmd} aqui ou em algum outro canal)**\n\n"
-                                      "**Você pode usar um nome ou um link de site compatível:**"
+    embed = disnake.Embed(description="**Join a voice channel and request a song here " +
+                                      ("no post" if is_forum else "in the channel or in the conversation below") +
+                                      f" (or click the button below or use the command {cmd} here or on some other channel)**\n\n"
+                                      "**You can use a name or a compatible website link:**"
                                       " ```ansi\n[31;1mYoutube[0m, [33;1mSoundcloud[0m, [32;1mSpotify[0m, [34;1mTwitch[0m```\n",
                           color=bot.get_color(target.guild.me))
 
     if text:
-        embed.description += f"**ÚLTIMA AÇÃO:** {text.replace('**', '')}\n"
+        embed.description += f"**LAST ACTION:** {text.replace('**', '')}\n"
 
     embed.set_thumbnail(target.guild.me.display_avatar.replace(size=256).url)
 

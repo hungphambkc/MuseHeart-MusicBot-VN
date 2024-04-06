@@ -1,5 +1,5 @@
-# Nota: Caso use esse arquivo, renomeie para lavalink.ini
-# Nota 2: caso algum valor tenha o caractere % você deve usar 2 ao invés de 1, exemplo: %%
+# Note: If you use this file, rename it to lavalink.ini
+# Note 2: if any value has the character % you must use 2 instead of 1, example: %%
 
 [something.host] # nome do node (pode ser qualquer nome)
 host=lava.link
