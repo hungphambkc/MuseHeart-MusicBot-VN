@@ -431,10 +431,10 @@ class Misc(commands.Cog):
 
         if bots_in_guild:
 
-            msg = f"Notei que há outros bots no servidor **{guild.name}** no qual sou compatível com " \
-                  f"o sistema de multi-voice: {', '.join(b.user.mention for b in bots_in_guild)}\n\n" \
-                  f"Ao usar usar os comandos de música (ex: play) sem um dos bots conectado no canal, será usado um " \
-                   f"dos bots que estiver livre no servidor."
+            msg = f"I noticed that there are other bots on the **{guild.name}** server that I am compatible with " \
+                  f"a multi-voice system: {', '.join(b.user.mention for b in bots_in_guild)}\n\n" \
+                  f"When using music commands (e.g. play) without one of the bots connected to the channel, one " \
+                   f"of the bots that is free on the server will be used."
 
             if not self.bot.config.get('MULTIVOICE_VIDEO_DEMO_URL'):
                 embeds.append(

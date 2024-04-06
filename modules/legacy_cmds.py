@@ -127,8 +127,8 @@ class Owner(commands.Cog):
     updatelavalink_flags.add_argument('-yml', '--yml', action='store_true',
                                       help="Download the application.yml file.")
     updatelavalink_flags.add_argument("-resetids", "-reset", "--resetids", "--reset",
-                                      help="Resetar info de ids das músicas (útil pra evitar problemas com certas "
-                                           "mudanças do lavaplayer/lavalink).", action="store_true")
+                                      help="Reset song id info (useful to avoid problems with certain "
+                                           "lavaplayer/lavalink changes).", action="store_true")
 
     @commands.is_owner()
     @commands.max_concurrency(1, commands.BucketType.default)
@@ -136,13 +136,13 @@ class Owner(commands.Cog):
     async def restartlavalink(self, ctx: CustomContext):
 
         if not self.bot.pool.lavalink_instance:
-            raise GenericError("**O servidor LOCAL não está sendo usado!**")
+            raise GenericError("**LOCAL server is not being used!**")
 
         await self.bot.pool.start_lavalink()
 
         await ctx.send(
             embed=disnake.Embed(
-                description="**Reiniciando o servidor lavalink LOCAL.**",
+                description="**Restarting lavalink LOCAL server.**",
                 color=self.bot.get_color(ctx.guild.me)
             )
         )
@@ -153,7 +153,7 @@ class Owner(commands.Cog):
     async def updatelavalink(self, ctx: CustomContext, flags: str = ""):
 
         if not self.bot.pool.lavalink_instance:
-            raise GenericError("**O servidor LOCAL não está sendo usado!**")
+            raise GenericError("**LOCAL server is not being used!**")
 
         args, unknown = ctx.command.extras['flags'].parse_known_args(flags.split())
 
@@ -195,20 +195,20 @@ class Owner(commands.Cog):
 
         await ctx.send(
             embed=disnake.Embed(
-                description="**O arquivo Lavalink.jar será atualizado "
-                            "e o servidor lavalink LOCAL será reiniciado.**",
+                description="**The Lavalink.jar file will be updated "
+                            "and the lavalink LOCAL server will be restarted.**",
                 color=self.bot.get_color(ctx.guild.me)
             )
         )
 
     @commands.is_owner()
-    @panel_command(aliases=["rcfg"], description="Recarregar as configs do bot.", emoji="⚙",
-                   alt_name="Recarregar as configs do bot.")
+    @panel_command(aliases=["rcfg"], description="Reload bot settings.", emoji="⚙",
+                   alt_name="Reload bot settings.")
     async def reloadconfig(self, ctx: Union[CustomContext, disnake.MessageInteraction]):
 
         self.bot.pool.load_cfg()
 
-        txt = "**AS Configurações do bot foram recarregadas com sucesso!**"
+        txt = "**Bot Settings have been successfully reloaded!**"
 
         if isinstance(ctx, CustomContext):
             embed = disnake.Embed(colour=self.bot.get_color(ctx.me), description=txt)
@@ -217,8 +217,8 @@ class Owner(commands.Cog):
             return txt
 
     @commands.is_owner()
-    @panel_command(aliases=["rd", "recarregar"], description="Recarregar os módulos.", emoji="🔄",
-                   alt_name="Carregar/Recarregar módulos.")
+    @panel_command(aliases=["rd", "recarregar"], description="Reload the modules.", emoji="🔄",
+                   alt_name="Load/Reload modules.")
     async def reload(self, ctx: Union[CustomContext, disnake.MessageInteraction], *modules):
 
         for m in list(sys.modules):
@@ -248,13 +248,13 @@ class Owner(commands.Cog):
         txt = ""
 
         if data["loaded"]:
-            txt += f'**Módulos carregados:** ```ansi\n[0;34m{" [0;37m| [0;34m".join(data["loaded"])}```\n'
+            txt += f'**Loaded modules:** ```ansi\n[0;34m{" [0;37m| [0;34m".join(data["loaded"])}```\n'
 
         if data["reloaded"]:
-            txt += f'**Módulos recarregados:** ```ansi\n[0;32m{" [0;37m| [0;32m".join(data["reloaded"])}```\n'
+            txt += f'**Reloaded modules:** ```ansi\n[0;32m{" [0;37m| [0;32m".join(data["reloaded"])}```\n'
 
         if not txt:
-            txt = "**Nenhum módulo encontrado...**"
+            txt = "**No modules found...**"
 
         self.bot.pool.config = load_config()
 
@@ -266,16 +266,16 @@ class Owner(commands.Cog):
 
     update_flags = CommandArgparse()
     update_flags.add_argument("-force", "--force", action="store_true",
-                              help="Forçar update ignorando o estado do repositório local).")
+                              help="Force update ignoring local repository state.")
     update_flags.add_argument("-pip", "--pip", action="store_true",
-                              help="Instalar/atualizar dependências após a atualização.")
+                              help="Install/update dependencies after upgrade.")
 
     @commands.is_owner()
     @commands.max_concurrency(1, commands.BucketType.default)
-    @panel_command(aliases=["up", "atualizar"], description="Atualizar meu code usando o git.",
+    @panel_command(aliases=["up", "atualizar"], description="Update my code using git.",
                    emoji="<:git:944873798166020116>", alt_name="Atualizar Bot", extras={"flags": update_flags})
     async def update(self, ctx: Union[CustomContext, disnake.MessageInteraction], *,
-                     opts: str = ""):  # TODO: Rever se há alguma forma de usar commands.Flag sem um argumento obrigatório, ex: --pip.
+                     opts: str = ""):  # TODO: Review if there is any way to use commands.Flag without a mandatory argument, e.g. --pip.
 
         out_git = ""
 
@@ -313,7 +313,7 @@ class Owner(commands.Cog):
         try:
             pull_log = await run_command("git --work-tree=. pull --allow-unrelated-histories -X theirs")
             if "Already up to date" in pull_log:
-                raise GenericError("**Já estou com os ultimos updates instalados...**")
+                raise GenericError("**I already have the latest updates installed...**")
             out_git += pull_log
 
         except GenericError as e:
@@ -322,7 +322,7 @@ class Owner(commands.Cog):
         except Exception as e:
 
             if "Already up to date" in str(e):
-                raise GenericError("Já estou com os ultimos updates instalados...")
+                raise GenericError("I already have the latest updates installed...")
 
             elif not "Fast-forward" in str(e):
                 out_git += await self.cleanup_git(force=True)
@@ -343,9 +343,9 @@ class Owner(commands.Cog):
 
         self.bot.pool.commit = commit
 
-        text = "`Será necessário me reiniciar após as alterações.`"
+        text = "`I will need to restart after the changes.`"
 
-        txt = f"`✅` **[Atualização realizada com sucesso!]({self.bot.pool.remote_git_url}/commits/main)**"
+        txt = f"`✅` **[Update completed successfully!]({self.bot.pool.remote_git_url}/commits/main)**"
 
         if git_log:
             txt += f"\n\n{self.format_log(git_log[:10])}"
@@ -377,7 +377,7 @@ class Owner(commands.Cog):
         if args.pip:
 
             embed = disnake.Embed(
-                description="**Instalando as dependências.\nPor favor aguarde...**",
+                description="**Installing the dependencies.\nPlease wait...**",
                 color=self.bot.get_color(ctx.guild.me)
             )
 
@@ -385,7 +385,7 @@ class Owner(commands.Cog):
 
             await run_command(cmd)
 
-            embed.description = "**As dependências foram instaladas com sucesso!**"
+            embed.description = "**Dependencies were installed successfully!**"
 
             await msg.edit(embed=embed)
 
@@ -411,13 +411,13 @@ class Owner(commands.Cog):
 
                 await ctx.send(
                     embed=disnake.Embed(
-                        description="**Será necessário atualizar as dependências usando o comando "
-                                    "abaixo no terminal/shell:**\n"
-                                    f"```sh\n{txt}{cmd}```\nou usar usar o comando: "
+                        description="**You will need to update the dependencies using the command "
+                                    "below in terminal/shell:**\n"
+                                    f"```sh\n{txt}{cmd}```\nor use use command: "
                                     f"```ansi\n[34;1m{prefix}update --force --pip[0m``` \n"
-                                    f"**Nota:** Dependendo da hospedagem (ou que não tenha 150mb de RAM livre "
-                                    f"e 0.5vCPU) você deve enviar o arquivo requirements.txt ao invés de "
-                                    f"usar uma das opções acima ou os botões de instalar dependências abaixo...",
+                                    f"**Note:** Depending on the hosting (or if you don't have 150mb of free RAM "
+                                    f"and 0.5vCPU) you must send the requirements.txt file instead of "
+                                    f"use one of the options above or the install dependencies buttons below...",
                         color=self.bot.get_color(ctx.guild.me)
                     ),
                     components=[
@@ -447,7 +447,7 @@ class Owner(commands.Cog):
 
             await inter.send(
                 embed=disnake.Embed(
-                    description="**Baixe o arquivo anexado e envie para sua hospedagem via commit etc.**",
+                    description="**Download the attached file and send it to your hosting via commit etc..**",
                     color=self.bot.get_color(inter.guild.me)
                 ),
                 file=disnake.File("update_reqs.zip")
@@ -490,12 +490,12 @@ class Owner(commands.Cog):
 
     @commands.max_concurrency(1, commands.BucketType.guild)
     @commands.cooldown(1, 10, commands.BucketType.user)
-    @panel_command(aliases=["latest", "lastupdate"], description="Ver minhas atualizações mais recentes.", emoji="📈",
-                   alt_name="Ultimas atualizações", hidden=False)
+    @panel_command(aliases=["latest", "lastupdate"], description="See my latest updates.", emoji="📈",
+                   alt_name="Last updates", hidden=False)
     async def updatelog(self, ctx: Union[CustomContext, disnake.MessageInteraction], amount: int = 10):
 
         if not os.path.isdir(os.environ["GIT_DIR"]):
-            raise GenericError("Não há repositorio iniciado no diretório do bot...\nNota: Use o comando update.")
+            raise GenericError("There is no repository started in the bot directory...\nNote: Use the update command.")
 
         if not self.bot.pool.remote_git_url:
             self.bot.pool.remote_git_url = self.bot.config["SOURCE_REPO"][:-4]

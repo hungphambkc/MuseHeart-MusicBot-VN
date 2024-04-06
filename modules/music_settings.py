@@ -43,7 +43,7 @@ def check_channel_perm(channel: Union[disnake.StageChannel, disnake.VoiceChannel
 
     if missing_perms:
         raise GenericError(
-            f"**{channel.guild.me.mention} não possui as seguintes permissões necessárias no canal {channel.mention}** ```ansi\n" +
+            f"**{channel.guild.me.mention} does not have the following required permissions on the channel {channel.mention}** ```ansi\n" +
             "\n".join(f"[0;33m{perms_translations.get(p, p)}[0m" for p in missing_perms) + "```")
 
 
@@ -91,7 +91,7 @@ class SkinSelector(disnake.ui.View):
         self.clear_items()
 
         if not self.global_mode:
-            self.embed.title = "Seletor de skin (Aplicar no bot selecionado)"
+            self.embed.title = "Skin selector (Apply to selected bot)"
 
             for s in self.select_opts:
                 s.default = self.skin_selected == s.value
@@ -103,7 +103,7 @@ class SkinSelector(disnake.ui.View):
             static_select_opts = self.static_select_opts
 
         else:
-            self.embed.title = "Seletor de skin (Aplicar em todos os bots do servidor)"
+            self.embed.title = "Skin selector (Apply to all bots on the server)"
 
             for s in self.global_select_opts:
                 s.default = self.skin_selected == s.value
@@ -122,15 +122,15 @@ class SkinSelector(disnake.ui.View):
         static_select_opts.callback = self.static_skin_callback
         self.add_item(static_select_opts)
 
-        global_mode = disnake.ui.Button(label=("Desativar" if self.global_mode else "Ativar") + " modo Global ", emoji="🌐")
+        global_mode = disnake.ui.Button(label=("Disable" if self.global_mode else "Activate") + " Global mode ", emoji="🌐")
         global_mode.callback = self.mode_callback
         self.add_item(global_mode)
 
-        confirm_button = disnake.ui.Button(label="Salvar", emoji="💾")
+        confirm_button = disnake.ui.Button(label="Save", emoji="💾")
         confirm_button.callback = self.confirm_callback
         self.add_item(confirm_button)
 
-        cancel_button = disnake.ui.Button(label="Cancelar", emoji="❌")
+        cancel_button = disnake.ui.Button(label="Cancel", emoji="❌")
         cancel_button.callback = self.stop_callback
         self.add_item(cancel_button)
 
@@ -139,7 +139,7 @@ class SkinSelector(disnake.ui.View):
         if inter.author.id == self.ctx.author.id:
             return True
 
-        await inter.send(f"Apenas {self.ctx.author.mention} pode interagir aqui!", ephemeral=True)
+        await inter.send(f"Only {self.ctx.author.mention} can interact here!", ephemeral=True)
         return False
 
     async def skin_callback(self, inter: disnake.MessageInteraction):
@@ -186,29 +186,29 @@ class PlayerSettings(disnake.ui.View):
         self.clear_items()
 
         player_purge_select = disnake.ui.Select(
-            placeholder="Selecione o modo de limpeza (song-request).",
+            placeholder="Select cleaning mode (song-request).",
             options=[
                 disnake.SelectOption(
-                    label="Limpar ao enviar mensagem",
-                    description="Limpar ao enviar mensagem no canal song-request",
+                    label="Clear when sending message",
+                    description="Clear when sending message in song-request channel",
                     value=SongRequestPurgeMode.on_message,
                     default=SongRequestPurgeMode.on_message == self.player_purge_mode
                 ),
                 disnake.SelectOption(
-                    label="Limpar ao finalizar o player",
-                    description="Limpar mensagens do song-request ao finalizar",
+                    label="Clear when finishing the player",
+                    description="Clear song-request messages when finished",
                     value=SongRequestPurgeMode.on_player_stop,
                     default=SongRequestPurgeMode.on_player_stop == self.player_purge_mode
                 ),
                 disnake.SelectOption(
-                    label="Limpar ao iniciar o player",
-                    description="Limpar mensagens do song-request ao iniciar",
+                    label="Clear when starting player",
+                    description="Clear song-request messages on startup",
                     value=SongRequestPurgeMode.on_player_start,
                     default=SongRequestPurgeMode.on_player_start == self.player_purge_mode
                 ),
                 disnake.SelectOption(
-                    label="Não limpar mensagens",
-                    description="Manter mensagens enviadas no canal song-request",
+                    label="Do not clear messages",
+                    description="Keep messages sent in the song-request channel",
                     value=SongRequestPurgeMode.no_purge,
                     default=SongRequestPurgeMode.no_purge == self.player_purge_mode
                 ),
@@ -219,13 +219,13 @@ class PlayerSettings(disnake.ui.View):
         self.add_item(player_purge_select)
 
         player_volume_select = disnake.ui.Select(
-            placeholder="Selecione um volume padrão.",
+            placeholder="Select a default volume.",
             options=[
-                        disnake.SelectOption(label=f"Volume padrão: {i}", default=i == self.default_player_volume,
+                        disnake.SelectOption(label=f"Standard volume: {i}", default=i == self.default_player_volume,
                                              value=str(i)) for i in range(5, 101, 5)
                     ] + [
-                disnake.SelectOption(label=f"Volume padrão: {i}", default=i == self.default_player_volume,
-                                     description="Nota: Acima de 100% o audio pode ficar ruim.",
+                disnake.SelectOption(label=f"Standard volume: {i}", default=i == self.default_player_volume,
+                                     description="Note: Above 100% the audio may be bad.",
                                      value=str(i)) for i in range(110, 151, 10)
             ]
         )
@@ -233,12 +233,12 @@ class PlayerSettings(disnake.ui.View):
         player_volume_select.callback = self.volume_callback
         self.add_item(player_volume_select)
 
-        check_other_bots_button = disnake.ui.Button(label="Não conectar com bots incompatíveis.",
+        check_other_bots_button = disnake.ui.Button(label="Do not connect with incompatible bots.",
                                                     emoji="✅" if self.check_other_bots_in_vc else "🚫")
         check_other_bots_button.callback = self.check_other_bots_callback
         self.add_item(check_other_bots_button)
 
-        restrict_mode_button = disnake.ui.Button(label="Modo restrito",
+        restrict_mode_button = disnake.ui.Button(label="Restricted mode",
                                                     emoji="✅" if self.enable_restrict_mode else "🚫")
         restrict_mode_button.callback = self.restrict_mode_callback
         self.add_item(restrict_mode_button)
@@ -248,7 +248,7 @@ class PlayerSettings(disnake.ui.View):
         check_autoplay_button.callback = self.autoplay_callback
         self.add_item(check_autoplay_button)
 
-        close_button = disnake.ui.Button(label="Salvar/Fechar", emoji="💾")
+        close_button = disnake.ui.Button(label="Save/Close", emoji="💾")
         close_button.callback = self.close_callback
         self.add_item(close_button)
 
@@ -281,9 +281,9 @@ class PlayerSettings(disnake.ui.View):
 
         try:
             if isinstance(self.ctx, CustomContext):
-                await self.message.edit(content="Alterações salvas com sucesso!", view=None, embed=None)
+                await self.message.edit(content="Changes saved successfully!", view=None, embed=None)
             else:
-                await self.ctx.edit_original_message(content="Alterações salvas com sucesso!", view=None, embed=None)
+                await self.ctx.edit_original_message(content="Changes saved successfully!", view=None, embed=None)
         except Exception:
             traceback.print_exc()
         await self.save_data()
@@ -294,7 +294,7 @@ class PlayerSettings(disnake.ui.View):
         if inter.author.id == self.ctx.author.id:
             return True
 
-        await inter.send(f"Apenas {self.ctx.author.mention} pode interagir aqui!", ephemeral=True)
+        await inter.send(f"Only {self.ctx.author.mention} can interact here!", ephemeral=True)
         return False
 
     async def save_data(self):
@@ -319,11 +319,11 @@ class PlayerSettings(disnake.ui.View):
 
         if isinstance(self.ctx, CustomContext):
             await self.message.edit(
-                embed=disnake.Embed(description="**Tempo esgotado...**", color=self.bot.get_color()), view=None
+                embed=disnake.Embed(description="**Time is over...**", color=self.bot.get_color()), view=None
             )
         else:
             await self.ctx.edit_original_message(
-                embed=disnake.Embed(description="**Tempo esgotado...**", color=self.bot.get_color()), view=None
+                embed=disnake.Embed(description="**Time is over...**", color=self.bot.get_color()), view=None
             )
 
         await self.save_data()
@@ -334,7 +334,7 @@ class PlayerSettings(disnake.ui.View):
 class MusicSettings(commands.Cog):
 
     emoji = "🔧"
-    name = "Configurações"
+    name = "Settings"
     desc_prefix = f"[{emoji} {name}] | "
 
     def __init__(self, bot: BotCore):
@@ -347,14 +347,14 @@ class MusicSettings(commands.Cog):
     @commands.has_guild_permissions(manage_guild=True)
     @commands.command(
         name="playersettings", aliases=["ps", "settings"],
-        description="Alterar algumas configurações padrões do player.",
+        description="Change some default player settings.",
         cooldown=player_settings_cd, max_concurrency=player_settings_mc
     )
     async def player_settings_legacy(self, ctx: CustomContext):
         await self.player_settings.callback(self=self, interaction=ctx)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Alterar algumas configurações padrões do player.",
+        description=f"{desc_prefix}Change some default player settings.",
         default_member_permissions=disnake.Permissions(manage_guild=True), dm_permission=False
     )
     async def player_settings(self, interaction: disnake.AppCmdInter):
@@ -380,7 +380,7 @@ class MusicSettings(commands.Cog):
 
         view.message = await func(
             embed=disnake.Embed(
-                description="**Ajustar configurações padrão do player:**",
+                description="**Adjust default player settings:**",
                 color=self.bot.get_color()
             ).set_author(name=str(bot.user), icon_url=bot.user.display_avatar.url), view=view
         )
@@ -392,12 +392,12 @@ class MusicSettings(commands.Cog):
 
     setup_args = CommandArgparse()
     setup_args.add_argument('-reset', '--reset', '-purge', '--purge', action="store_true",
-                             help="Limpar mensagens do canal selecionado (até 100 mensagens, não efetivo em forum).")
+                             help="Clear messages from the selected channel (up to 100 messages, not effective in forums).")
 
     @commands.has_guild_permissions(manage_guild=True)
     @commands.command(
         name="setup", aliases=["songrequestchannel", "sgrc"], usage="{prefix}{cmd} [id|#canal]\nEx: {prefix}{cmd} #canal",
-        description="Criar/escolher um canal dedicado para pedir músicas e deixar player fixado.",
+        description="Create/choose a dedicated channel to request songs and leave a player pinned.",
         cooldown=setup_cd, max_concurrency=setup_mc, extras={"flags": setup_args}
     )
     async def setup_legacy(
@@ -412,7 +412,7 @@ class MusicSettings(commands.Cog):
                                   purge_messages=args.reset)
 
     @commands.slash_command(
-        description=f"{desc_prefix}Criar/escolher um canal dedicado para pedir músicas e deixar player fixado.",
+        description=f"{desc_prefix}Create/choose a dedicated channel to request songs and leave a player pinned.",
         default_member_permissions=disnake.Permissions(manage_guild=True), cooldown=setup_cd, max_concurrency=setup_mc,
         dm_permission=False
     )
@@ -420,17 +420,17 @@ class MusicSettings(commands.Cog):
             self,
             interaction: disnake.AppCmdInter,
             target: Union[disnake.TextChannel, disnake.VoiceChannel, disnake.ForumChannel, disnake.StageChannel] = commands.Param(
-                name="canal", default=None, description="Selecionar um canal existente"
+                name="canal", default=None, description="Select an existing channel"
             ),
             purge_messages: str = commands.Param(
-                name="limpar_mensagens", default="no",
-                description="Limpar mensagens do canal selecionado (até 100 mensagens, não efetivo em forum).",
+                name="clear messages", default="no",
+                description="Clear messages from the selected channel (up to 100 messages, not effective in forums).",
                 choices=[
                     disnake.OptionChoice(
-                        disnake.Localized("Yes", data={disnake.Locale.pt_BR: "Sim"}), "yes"
+                        disnake.Localized("Yes", data={disnake.Locale.pt_BR: "Yes"}), "yes"
                     ),
                     disnake.OptionChoice(
-                        disnake.Localized("No", data={disnake.Locale.pt_BR: "Não"}), "no"
+                        disnake.Localized("No", data={disnake.Locale.pt_BR: "No"}), "no"
                     )
                 ],
             )
@@ -453,7 +453,7 @@ class MusicSettings(commands.Cog):
         if isinstance(target, disnake.ForumChannel) and not isinstance(inter, CustomContext):
 
             await inter.response.send_modal(
-                title="Escolha um nome para o post (em até 30seg.)",
+                title="Choose a name for the post (within 30 seconds)",
                 custom_id=str(inter.id),
                 components=[
                     disnake.ui.TextInput(
@@ -534,7 +534,7 @@ class MusicSettings(commands.Cog):
                 pass
 
         embed_archived = disnake.Embed(
-            description=f"**Este canal de pedir música foi reconfigurado pelo membro {inter.author.mention}.**",
+            description=f"**This music request channel has been reconfigured by the member {inter.author.mention}.**",
             color=bot.get_color(guild.me)
         )
 
@@ -544,7 +544,7 @@ class MusicSettings(commands.Cog):
 
                 try:
                     if isinstance(original_message.channel.parent, disnake.ForumChannel):
-                        await original_message.thread.delete(reason=f"Player reconfigurado por {inter.author}.")
+                        await original_message.thread.delete(reason=f"Player reconfigured by {inter.author}.")
                         return
                 except AttributeError:
                     pass
@@ -561,7 +561,7 @@ class MusicSettings(commands.Cog):
                     await original_message.thread.edit(
                         archived=True,
                         locked=True,
-                        reason=f"Player reconfigurado por {inter.author}."
+                        reason=f"Player reconfigured by {inter.author}."
                     )
                 except:
                     pass
@@ -589,22 +589,22 @@ class MusicSettings(commands.Cog):
                         kwargs_msg = {"ephemeral": True}
 
             buttons = [
-                disnake.ui.Button(label="Criar canal de texto", custom_id=f"text_channel_{id_}", emoji="💬", disabled=not guild.me.guild_permissions.manage_channels),
-                disnake.ui.Button(label="Criar canal de voz", custom_id=f"voice_channel_{id_}", emoji="🔊", disabled=not guild.me.guild_permissions.manage_channels),
-                disnake.ui.Button(label="Cancelar", custom_id=f"voice_channel_cancel_{id_}", emoji="❌")
+                disnake.ui.Button(label="Create text channel", custom_id=f"text_channel_{id_}", emoji="💬", disabled=not guild.me.guild_permissions.manage_channels),
+                disnake.ui.Button(label="Create voice channel", custom_id=f"voice_channel_{id_}", emoji="🔊", disabled=not guild.me.guild_permissions.manage_channels),
+                disnake.ui.Button(label="Cancel", custom_id=f"voice_channel_cancel_{id_}", emoji="❌")
             ]
 
             if "COMMUNITY" in guild.features:
-                buttons.insert(2, disnake.ui.Button(label="Criar canal de palco", custom_id=f"stage_channel_{id_}",
+                buttons.insert(2, disnake.ui.Button(label="Create stage channel", custom_id=f"stage_channel_{id_}",
                                   emoji="<:stagechannel:1077351815533826209>", disabled=not guild.me.guild_permissions.manage_channels))
 
             color = self.bot.get_color(guild.me)
 
             embeds = [
                 disnake.Embed(
-                    description="**Selecione um canal " + ("ou clique em um dos botões abaixo para criar um novo canal para pedir músicas." if guild.me.guild_permissions.manage_channels else "abaixo:") +'**' ,
+                    description="**Select a channel " + ("or click one of the buttons below to create a new channel to request songs." if guild.me.guild_permissions.manage_channels else "below:") +'**' ,
                     color=color
-                ).set_footer(text="Você tem apenas 45 segundos para selecionar/clicar em uma opção.")
+                ).set_footer(text="You only have 45 seconds to select/click an option.")
             ]
 
             if not guild.me.guild_permissions.manage_channels:
