@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import datetime
+import itertools
 from os.path import basename
 
 import disnake
@@ -35,7 +36,7 @@ class MiniStaticSkin:
 
         embed = disnake.Embed(
             color=embed_color,
-            description=f"[`{player.current.single_title}`]({player.current.uri or player.current.search_uri})"
+            description=f"-# [`{player.current.single_title}`]({player.current.uri or player.current.search_uri})"
         )
         embed_queue = None
         queue_size = len(player.queue)
@@ -115,8 +116,8 @@ class MiniStaticSkin:
                 else:
                     duration = f"<t:{int((current_time + datetime.timedelta(milliseconds=queue_duration)).timestamp())}:R>"
 
-                    queue_txt += f"`┌ {n + 1})` [`{fix_characters(t.title, limit=34)}`]({t.uri})\n" \
-                                 f"`└ ⏲️` {duration}" + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "") + \
+                    queue_txt += f"-# `┌ {n + 1})` [`{fix_characters(t.title, limit=34)}`]({t.uri})\n" \
+                                 f"-# `└ ⏲️` {duration}" + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "") + \
                                  f" **|** `✋` <@{t.requester}>\n"
 
             embed_queue = disnake.Embed(title=f"Músicas na fila: {queue_size}",
@@ -124,7 +125,7 @@ class MiniStaticSkin:
                                         description=f"\n{queue_txt}")
 
             if not has_stream and not player.loop and not player.keep_connected and not player.paused and not player.current.is_stream:
-                embed_queue.description += f"\n`[ ⌛ As músicas acabam` <t:{int((current_time + datetime.timedelta(milliseconds=queue_duration + player.current.duration)).timestamp())}:R> `⌛ ]`"
+                embed_queue.description += f"\n-# `[ ⌛ As músicas acabam` <t:{int((current_time + datetime.timedelta(milliseconds=queue_duration + player.current.duration)).timestamp())}:R> `⌛ ]`"
 
         elif player.queue_autoplay:
 
@@ -159,8 +160,8 @@ class MiniStaticSkin:
                 else:
                     duration = f"<t:{int((current_time + datetime.timedelta(milliseconds=queue_duration)).timestamp())}:R>"
 
-                    queue_txt += f"`┌ {n + 1})` [`{fix_characters(t.title, limit=34)}`]({t.uri})\n" \
-                                 f"`└ ⏲️` {duration}" + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "") + \
+                    queue_txt += f"-# `┌ {n + 1})` [`{fix_characters(t.title, limit=34)}`]({t.uri})\n" \
+                                 f"-# `└ ⏲️` {duration}" + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "") + \
                                  f" **|** `👍⠂Recomendada`\n"
 
             embed_queue = disnake.Embed(title="Próximas músicas recomendadas:",
@@ -234,6 +235,11 @@ class MiniStaticSkin:
                         description="Sistema de adição de música automática quando a fila estiver vazia."
                     ),
                     disnake.SelectOption(
+                        label="Last.fm scrobble", emoji="<:Lastfm:1278883704097341541>",
+                        value=PlayerControls.lastfm_scrobble,
+                        description="Ativar/desativar o scrobble/registro de músicas na sua conta do last.fm."
+                    ),
+                    disnake.SelectOption(
                         label=("Desativar" if player.restrict_mode else "Ativar") + " o modo restrito", emoji="🔐",
                         value=PlayerControls.restrict_mode,
                         description="Apenas DJ's/Staff's podem usar comandos restritos."
@@ -241,6 +247,22 @@ class MiniStaticSkin:
                 ]
             ),
         ]
+
+        if (queue:=player.queue or player.queue_autoplay):
+            data["components"].append(
+                disnake.ui.Select(
+                    placeholder="Próximas músicas:",
+                    custom_id="musicplayer_queue_dropdown",
+                    min_values=0, max_values=1,
+                    options=[
+                        disnake.SelectOption(
+                            label=f"{n+1}. {fix_characters(t.author, 18)}",
+                            description=fix_characters(t.title, 47),
+                            value=f"{n:02d}.{t.title[:96]}"
+                        ) for n, t in enumerate(itertools.islice(queue, 25))
+                    ]
+                )
+            )
 
         if player.current.ytid and player.node.lyric_support:
             data["components"][5].options.append(
@@ -253,12 +275,11 @@ class MiniStaticSkin:
 
 
         if isinstance(player.last_channel, disnake.VoiceChannel):
-            txt = "Desativar" if player.stage_title_event else "Ativar"
             data["components"][5].options.append(
                 disnake.SelectOption(
-                    label= f"{txt} status automático", emoji="📢",
-                    value=PlayerControls.stage_announce,
-                    description=f"{txt} o status automático do canal de voz."
+                    label="Status automático", emoji="📢",
+                    value=PlayerControls.set_voice_status,
+                    description="Configurar o status automático do canal de voz."
                 )
             )
 

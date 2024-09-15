@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Union
 from urllib.parse import urlparse, parse_qs, urlunparse, urlencode
 
 import disnake
+from cachetools import TTLCache
 from disnake.ext import commands
 from motor.motor_asyncio import AsyncIOMotorClient
 from tinydb_serialization import Serializer, SerializationMiddleware
@@ -36,7 +37,6 @@ db_models = {
             "skin": None,
             "static_skin": None,
             "fav_links": {},
-            "purge_mode": "on_message"
         },
         "autoplay": False,
         "check_other_bots_in_vc": False,
@@ -51,14 +51,26 @@ db_models = {
     }
 }
 
+scrobble_model = {
+    DBModel.users: {
+        "ver": 1.0,
+        "tracks": []
+    }
+}
+
 global_db_models = {
     DBModel.users: {
-        "ver": 1.4,
+        "ver": 1.6,
         "fav_links": {},
         "integration_links": {},
         "token": "",
         "custom_prefix": "",
         "last_tracks": [],
+        "lastfm": {
+            "username": "",
+            "sessionkey": "",
+            "scrobble": False,
+        }
     },
     DBModel.guilds: {
         "ver": 1.4,
@@ -110,11 +122,13 @@ async def get_prefix(bot: BotCore, message: disnake.Message):
 
 class BaseDB:
 
+    def __init__(self, cache_maxsize: int = 1000, cache_ttl=300):
+        self.cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
+
     def get_default(self, collection: str, db_name: Union[DBModel.guilds, DBModel.users]):
         if collection == "global":
             return deepcopy(global_db_models[db_name])
         return deepcopy(db_models[db_name])
-
 
 
 class DatetimeSerializer(Serializer):
@@ -141,8 +155,8 @@ class CustomTinyMongoClient(TinyMongoClient):
 
 class LocalDatabase(BaseDB):
 
-    def __init__(self, dir_="./local_database"):
-        super().__init__()
+    def __init__(self, dir_="./local_database", cache_maxsize=1000, cache_ttl=300):
+        super().__init__(cache_maxsize=cache_maxsize, cache_ttl=cache_ttl)
 
         if not os.path.isdir(dir_):
             os.makedirs(dir_)
@@ -157,15 +171,18 @@ class LocalDatabase(BaseDB):
 
         id_ = str(id_)
 
+        if (cached_result := self.cache.get(f"{collection}:{db_name}:{id_}")) is not None:
+            return cached_result
+
         data = self._connect[collection][db_name].find_one({"_id": id_})
 
         if not data:
-            data = default_model[db_name].copy()
+            data = deepcopy(default_model[db_name])
             data["_id"] = str(id_)
             self._connect[collection][db_name].insert_one(data)
 
         elif data["ver"] != default_model[db_name]["ver"]:
-            data = update_values(default_model[db_name].copy(), data)
+            data = update_values(deepcopy(default_model[db_name]), data)
             data["ver"] = default_model[db_name]["ver"]
 
             await self.update_data(id_, data, db_name=db_name, collection=collection)
@@ -184,6 +201,8 @@ class LocalDatabase(BaseDB):
         except:
             traceback.print_exc()
 
+        self.cache[f"{collection}:{db_name}:{id_}"] = data
+
         return data
 
     async def query_data(self, db_name: str, collection: str, filter: dict = None, limit=500) -> list:
@@ -191,22 +210,20 @@ class LocalDatabase(BaseDB):
 
     async def delete_data(self, id_, db_name: str, collection: str):
         try:
-            return self._connect[collection][db_name].delete_one({'_id': str(id_)})
+            self._connect[collection][db_name].delete_one({'_id': str(id_)})
         except TypeError:
             return
+
+        try:
+            self.cache.pop(f"{collection}:{db_name}:{id_}")
+        except KeyError:
+            pass
 
 
 class MongoDatabase(BaseDB):
 
-    def __init__(self, token: str, timeout=30):
-        super().__init__()
-
-        try:
-            shutil.rmtree("./.db_cache")
-        except:
-            pass
-
-        self.cache = LocalDatabase(dir_="./.db_cache")
+    def __init__(self, token: str, timeout=30, cache_maxsize=1000, cache_ttl=300):
+        super().__init__(cache_maxsize=cache_maxsize, cache_ttl=cache_ttl)
 
         fix_ssl = os.environ.get("MONGO_SSL_FIX") or os.environ.get("REPL_SLUG")
 
@@ -254,12 +271,6 @@ class MongoDatabase(BaseDB):
                 except:
                     traceback.print_exc()
 
-    async def get_secret_data(self, id_:int, db_name: Union[DBModel.users_secret, DBModel.global_secrets]):
-        return await self.get_data(
-            id_=id_, db_name=db_name, collection="global",
-            default_model=global_db_models
-        )
-
     async def get_data(self, id_: int, *, db_name: Union[DBModel.guilds, DBModel.users],
                        collection: str, default_model: dict = None):
 
@@ -268,51 +279,36 @@ class MongoDatabase(BaseDB):
 
         id_ = str(id_)
 
-        update_cache = False
+        if (cached_result := self.cache.get(f"{collection}:{db_name}:{id_}")) is not None:
+            return cached_result
 
-        try:
-            data = self.cache._connect[collection][db_name].find_one({"_id": id_})
-        except:
-            traceback.print_exc()
-            data = {}
-            update_cache = True
+        data = await self._connect[collection][db_name].find_one({"_id": id_})
 
         if not data:
-            data = await self._connect[collection][db_name].find_one({"_id": id_})
-
-        if not data:
-            data = default_model[db_name].copy()
-            try:
-                await self.cache.update_data(id_, data, db_name=db_name, collection=collection, default_model=default_model)
-            except:
-                traceback.print_exc()
-            return data
+            return deepcopy(default_model[db_name])
 
         elif data["ver"] != default_model[db_name]["ver"]:
-            data = update_values(default_model[db_name].copy(), data)
+            data = update_values(deepcopy(default_model[db_name]), data)
             data["ver"] = default_model[db_name]["ver"]
             await self.update_data(id_, data, db_name=db_name, collection=collection)
-
-        elif update_cache:
-            try:
-                await self.cache.update_data(id_, data, db_name=db_name, collection=collection, default_model=default_model)
-            except:
-                traceback.print_exc()
 
         return data
 
     async def update_data(self, id_, data: dict, *, db_name: Union[DBModel.guilds, DBModel.users, str],
                           collection: str, default_model: dict = None):
 
+        self.cache[f"{collection}:{db_name}:{id_}"] = data
         await self._connect[collection][db_name].update_one({'_id': str(id_)}, {'$set': data}, upsert=True)
-        await self.cache.update_data(id_, data, db_name=db_name, collection=collection, default_model=default_model)
         return data
 
     async def query_data(self, db_name: str, collection: str, filter: dict = None, limit=100) -> list:
         return [d async for d in self._connect[collection][db_name].find(filter or {})]
 
     async def delete_data(self, id_, db_name: str, collection: str):
-        await self.cache.delete_data(id_, db_name=db_name, collection=collection)
+        try:
+            self.cache.pop(f"{collection}:{db_name}:{id_}")
+        except KeyError:
+            pass
         return await self._connect[collection][db_name].delete_one({'_id': str(id_)})
 
 

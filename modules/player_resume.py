@@ -14,12 +14,12 @@ import aiofiles
 import disnake
 from disnake.ext import commands
 
-import wavelink
 from utils.client import BotCore
+from utils.db import DBModel
 from utils.music.checks import can_connect, can_send_message
 from utils.music.filters import AudioFilter
 from utils.music.models import LavalinkPlayer
-from utils.others import SongRequestPurgeMode, send_idle_embed, CustomContext
+from utils.others import send_idle_embed, CustomContext
 
 
 class PlayerSession(commands.Cog):
@@ -49,12 +49,12 @@ class PlayerSession(commands.Cog):
         await self.delete_data(player)
 
     @commands.Cog.listener('on_wavelink_track_end')
-    async def track_end(self, node, payload: wavelink.TrackStart):
+    async def track_end(self, player: LavalinkPlayer, *args, **kwargs):
 
-        if len(payload.player.queue) > 0:
+        if len(player.queue) > 0:
             return
 
-        await self.save_info(payload.player)
+        await self.save_info(player)
 
     @commands.is_owner()
     @commands.command(hidden=True, description="Salvar informações dos players na database instantaneamente.", aliases=["svplayers"])
@@ -178,9 +178,9 @@ class PlayerSession(commands.Cog):
             "queue_autoplay": autoqueue,
             "failed_tracks": failed_tracks,
             "prefix_info": player.prefix_info,
-            "purge_mode": player.purge_mode,
             "voice_state": player._voice_state,
             "time": disnake.utils.utcnow(),
+            "lastfm_artists": player.lastfm_artists
         }
 
         try:
@@ -270,7 +270,8 @@ class PlayerSession(commands.Cog):
             player: LavalinkPlayer,
             voice_channel: Union[disnake.VoiceChannel, disnake.StageChannel],
             pause: bool,
-            position: int
+            position: int,
+            has_members = None
     ):
 
         if not player.current:
@@ -282,9 +283,9 @@ class PlayerSession(commands.Cog):
             if not player.current and player.autoplay:
                 try:
                     player.current = await player.get_autoqueue_tracks()
+                    position = 0
                 except:
                     traceback.print_exc()
-
 
         data = {
             "volume": player.volume,
@@ -295,11 +296,11 @@ class PlayerSession(commands.Cog):
         await self.voice_check(voice_channel, position)
 
         try:
-            track_id = player.current.info.get("temp_id") or player.current.id
+            track_id = player.current.id
         except:
             track_id = None
 
-        if track_id:
+        if track_id and has_members:
             data.update(
                 {
                     "encodedTrack": track_id,
@@ -310,7 +311,9 @@ class PlayerSession(commands.Cog):
             await player.node.update_player(player.guild.id, data=data)
         else:
             await player.node.update_player(player.guild.id, data=data)
-            await player.process_next()
+            if player.current:
+                player.queue.appendleft(player.current)
+            await player.process_next(start_position=position)
 
     async def voice_check(self, voice_channel: Union[disnake.VoiceChannel, disnake.StageChannel], position: int = 0):
 
@@ -356,7 +359,9 @@ class PlayerSession(commands.Cog):
         try:
             guild = self.bot.get_guild(data["_id"])
 
-            if not (db_date := data.get("time")) or (disnake.utils.utcnow() - db_date).total_seconds() > 172800:
+            db_date = data.get("time")
+
+            if not db_date or (not guild and ((disnake.utils.utcnow() - db_date)).total_seconds() > 172800):
                 print(f"{self.bot.user} - Limpando informações do player: {data['_id']}")
                 await self.delete_data(data["_id"])
                 return
@@ -372,17 +377,32 @@ class PlayerSession(commands.Cog):
                 message = None
                 started = False
 
-                if not data["text_channel_id"]:
-                    text_channel = None
-                elif not isinstance(data["text_channel_id"], disnake.Thread):
-                    text_channel = self.bot.get_channel(data["text_channel_id"])
-                else:
+                guild_data = await self.bot.get_data(guild.id, db_name=DBModel.guilds)
+
+                text_channel = None
+
+                if guild_data['player_controller']["channel"]:
                     try:
-                        text_channel = self.bot.get_channel(int(data["text_channel_id"])) or \
-                                   await self.bot.fetch_channel(int(data["text_channel_id"]))
-                    except (disnake.NotFound, TypeError):
-                        text_channel = None
-                        data["message_id"] = None
+                        text_channel = self.bot.get_channel(int(guild_data['player_controller']["channel"])) or await self.bot.fetch_channel(
+                            int(guild_data['player_controller']["channel"]))
+                    except:
+                        pass
+                    else:
+                        data["message_id"] = int(guild_data['player_controller']['message_id'])
+
+                if not text_channel:
+
+                    if not data["text_channel_id"]:
+                        pass
+                    elif not isinstance(data["text_channel_id"], disnake.Thread):
+                        text_channel = self.bot.get_channel(data["text_channel_id"])
+                    else:
+                        try:
+                            text_channel = self.bot.get_channel(int(data["text_channel_id"])) or \
+                                       await self.bot.fetch_channel(int(data["text_channel_id"]))
+                        except (disnake.NotFound, TypeError):
+                            text_channel = None
+                            data["message_id"] = None
 
                 if not text_channel:
                     data['static'] = False
@@ -442,6 +462,13 @@ class PlayerSession(commands.Cog):
                         if not data["skin_static"]:
                             await text_channel.send(embed=disnake.Embed(description=msg, color=self.bot.get_color(guild.me)))
                         else:
+                            if isinstance(text_channel, disnake.ForumChannel):
+                                cog = self.bot.get_cog("Music")
+                                if cog:
+                                    await cog.reset_controller_db(guild.id, guild_data)
+                                print(f"{self.bot.user} - Controller resetado por config de canal inválido.\n"
+                                      f"Server: {guild.name} [{guild.id}] | channel: {text_channel.name} [{text_channel.id}] {type(text_channel)}")
+                                return
                             await send_idle_embed(text_channel, bot=self.bot, text=msg)
                     except Exception:
                         traceback.print_exc()
@@ -462,12 +489,6 @@ class PlayerSession(commands.Cog):
                     except Exception:
                         traceback.print_exc()
                     return
-
-                if data["purge_mode"] == SongRequestPurgeMode.on_player_start:
-                    data["purge_mode"] = SongRequestPurgeMode.no_purge
-                    temp_purge_mode = True
-                else:
-                    temp_purge_mode = False
 
                 while True:
 
@@ -500,11 +521,9 @@ class PlayerSession(commands.Cog):
                         custom_skin_static_data=data.get("custom_skin_static_data", {}),
                         extra_hints=hints,
                         uptime=data.get("uptime"),
-                        stage_title_event=data.get("stage_title_event", False),
                         stage_title_template=data.get("stage_title_template"),
                         restrict_mode=data["restrict_mode"],
                         prefix=data["prefix_info"],
-                        purge_mode=data["purge_mode"],
                         session_resuming=True,
                     )
                 except Exception:
@@ -523,8 +542,9 @@ class PlayerSession(commands.Cog):
                 except:
                     pass
 
-                if temp_purge_mode:
-                    player.purge_mode = SongRequestPurgeMode.on_player_start
+                player.lastfm_artists = data.get("lastfm_artists")
+
+                player.stage_title_event = data.get("stage_title_event", False)
 
                 player.listen_along_invite = data.pop("listen_along_invite", "")
 
@@ -539,7 +559,7 @@ class PlayerSession(commands.Cog):
                 player.nightcore = data.get("nightcore")
 
                 if player.nightcore:
-                    player.filters.update(AudioFilter.timescale(pitch=1.2, speed=1.1))
+                    player.filters.update(AudioFilter.timescale(pitch=1.2, speed=1.1).filter)
 
                 if node.version == 3:
 
@@ -558,15 +578,20 @@ class PlayerSession(commands.Cog):
 
             player.played.extend(played_tracks)
 
-            if player.autoplay:
+            queue_autoplay_tracks, playlists = self.bot.pool.process_track_cls(data.get("queue_autoplay", []))
 
-                queue_autoplay_tracks, playlists = self.bot.pool.process_track_cls(data.get("queue_autoplay", []))
-
-                player.queue_autoplay.extend(queue_autoplay_tracks)
+            player.queue_autoplay.extend(queue_autoplay_tracks)
 
             failed_tracks, playlists = self.bot.pool.process_track_cls(data.get("failed_tracks", []), playlists)
 
-            player.failed_tracks.extend(failed_tracks)
+            player.queue.extend(failed_tracks)
+
+            if player.controller_mode is False:
+                try:
+                    await player.message.delete()
+                    player.message = None
+                except:
+                    pass
 
             if started:
                 player.set_command_log(
@@ -589,66 +614,40 @@ class PlayerSession(commands.Cog):
                     emoji="🔰"
                 )
 
+                player._last_channel = voice_channel
+
                 try:
-                    check = any(m for m in player.guild.me.voice.channel.members if not m.bot or not (m.voice.deaf or m.voice.self_deaf))
+                    check = any(m for m in voice_channel.members if not m.bot or not (m.voice.deaf or m.voice.self_deaf))
                 except:
                     check = None
 
+                if not check:
+                    player.auto_pause = True
+
                 try:
-                    if (pause:=data.get("paused") and check):
 
-                        try:
-                            track = player.queue.popleft()
-                        except:
-                            track = None
+                    pause = data.get("paused") and check
 
-                        if track:
-                            player.current = track
-                            position = int(float(data.get("position", 0)))
-                            if player.node.version == 3:
-                                await player.play(track, start=position if not track.is_stream else 0)
-                                await player.set_pause(True)
-                            else:
-                                await self.update_player(
-                                    player=player, voice_channel=voice_channel, pause=pause, position=position
-                                )
-                            player.last_position = position
-                            player.last_track = track
-                            await player.invoke_np(rpc_update=True)
-                            await player.update_stage_topic()
+                    start_position = int(float(data.get("position", 0))) if player.queue else 0
 
-                        else:
-                            if player.node.version > 3:
-                                await self.update_player(
-                                    player=player, voice_channel=voice_channel, pause=pause, position=0
-                                )
-                                player.last_position = int(float(data.get("position", 0)))
-                                await player.invoke_np()
-                            else:
-                                await player.process_next(clear_autoqueue=False)
-
+                    if player.node.version > 3:
+                        await self.update_player(
+                            player=player, voice_channel=voice_channel, pause=pause, position=start_position, has_members=check
+                        )
+                        await player.invoke_np()
                     else:
-                        position = int(float(data.get("position", 0)))
-                        if player.node.version > 3:
-                            await self.update_player(
-                                player=player, voice_channel=voice_channel, pause=pause, position=position
-                            )
-                            await player.invoke_np()
-                        else:
-                            await player.process_next(start_position=position, clear_autoqueue=False)
-                        player._session_resuming = False
+                        await player.process_next(start_position=start_position)
+                        if pause:
+                            await player.set_pause(True)
+                            if not check:
+                                player.members_timeout_task = player.bot.loop.create_task(player.members_timeout(check=False))
+
+                    player._session_resuming = False
                 except Exception:
                     print(f"{self.bot.user} - Falha na reprodução da música ao retomar player do servidor {guild.name} [{guild.id}]:\n{traceback.format_exc()}")
                     return
 
-                try:
-                    player.members_timeout_task.cancel()
-                except:
-                    pass
-
-                player.members_timeout_task = self.bot.loop.create_task(player.members_timeout(check=check, idle_timeout=10))
-
-            print(f"{self.bot.user} - Player Retomado: {guild.name} [{guild.id}]")
+            print(f"▶️ - {self.bot.user} - Player Retomado: {guild.name} [{guild.id}] - Server: {player.node.identifier}")
 
         except Exception:
             print(f"{self.bot.user} - Falha Crítica ao retomar players:\n{traceback.format_exc()}")

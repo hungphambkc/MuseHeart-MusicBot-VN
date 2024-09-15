@@ -164,6 +164,11 @@ class ClassicStaticSkin:
                         description="Sistema de adição de música automática quando a fila estiver vazia."
                     ),
                     disnake.SelectOption(
+                        label="Last.fm scrobble", emoji="<:Lastfm:1278883704097341541>",
+                        value=PlayerControls.lastfm_scrobble,
+                        description="Ativar/desativar o scrobble/registro de músicas na sua conta do last.fm."
+                    ),
+                    disnake.SelectOption(
                         label= ("Desativar" if player.restrict_mode else "Ativar") + " o modo restrito", emoji="🔐",
                         value=PlayerControls.restrict_mode,
                         description="Apenas DJ's/Staff's podem usar comandos restritos."
@@ -171,6 +176,22 @@ class ClassicStaticSkin:
                 ]
             ),
         ]
+
+        if (queue:=player.queue or player.queue_autoplay):
+            data["components"].append(
+                disnake.ui.Select(
+                    placeholder="Próximas músicas:",
+                    custom_id="musicplayer_queue_dropdown",
+                    min_values=0, max_values=1,
+                    options=[
+                        disnake.SelectOption(
+                            label=f"{n+1}. {fix_characters(t.author, 18)}",
+                            description=fix_characters(t.title, 47),
+                            value=f"{n:02d}.{t.title[:96]}"
+                        ) for n, t in enumerate(itertools.islice(queue, 25))
+                    ]
+                )
+            )
 
         if player.current.ytid and player.node.lyric_support:
             data["components"][5].options.append(
@@ -183,12 +204,11 @@ class ClassicStaticSkin:
 
 
         if isinstance(player.last_channel, disnake.VoiceChannel):
-            txt = "Desativar" if player.stage_title_event else "Ativar"
             data["components"][5].options.append(
                 disnake.SelectOption(
-                    label= f"{txt} status automático", emoji="📢",
-                    value=PlayerControls.stage_announce,
-                    description=f"{txt} o status automático do canal de voz."
+                    label="Status automático", emoji="📢",
+                    value=PlayerControls.set_voice_status,
+                    description="Configurar o status automático do canal de voz."
                 )
             )
 

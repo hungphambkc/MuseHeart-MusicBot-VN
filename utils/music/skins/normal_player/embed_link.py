@@ -35,20 +35,20 @@ class EmbedLinkSkin:
         txt = ""
 
         if player.current_hint:
-            txt += f"> `💡` **⠂Dica:** `{player.current_hint}`"
+            txt += f"> -# `💡` **⠂Dica:** `{player.current_hint}`"
 
         if player.current.is_stream:
-            duration_txt = f"\n> `🔴` **⠂Duração:** `Livestream`"
+            duration_txt = f"\n> -# `🔴` **⠂Duração:** `Livestream`"
         else:
-            duration_txt = f"\n> `⏰` **⠂Duração:** `{time_format(player.current.duration)}`"
+            duration_txt = f"\n> -# `⏰` **⠂Duração:** `{time_format(player.current.duration)}`"
 
-        title = f"`{player.current.title}`" if not player.current.uri else f"[`{fix_characters(player.current.title, 40)}`]({player.current.uri})"
+        title = f"`{fix_characters(player.current.title)}`" if not player.current.uri else f"[`{fix_characters(player.current.title, 40)}`]({player.current.uri})"
 
         if player.paused:
-            txt += f"\n> `⏸️` **⠂Em Pausa:** {title}{duration_txt}"
+            txt += f"\n> -# ⏸️ **⠂Em Pausa:** {title}{duration_txt}"
 
         else:
-            txt += f"\n> `▶️` **⠂Tocando Agora:** {title}{duration_txt}"
+            txt += f"\n> -# ▶️ **⠂Tocando Agora:** {title}{duration_txt}"
             if not player.current.is_stream:
                 txt += f" `[`<t:{int((disnake.utils.utcnow() + datetime.timedelta(milliseconds=player.current.duration - player.position)).timestamp())}:R>`]`" \
                 if not player.paused else ''
@@ -68,7 +68,7 @@ class EmbedLinkSkin:
 
             log = re.sub(r"\[(.+)]\(.+\)", r"\1", player.command_log.replace("`", "")) # remover links do command_log p/ evitar gerar mais de uma preview.
 
-            txt += f"> {player.command_log_emoji} **⠂Última Interação:** {log}\n"
+            txt += f"> -# {player.command_log_emoji} **⠂Última Interação:** {log}\n"
 
         data["content"] = txt
 
@@ -134,6 +134,11 @@ class EmbedLinkSkin:
                         description="Sistema de adição de música automática quando a fila estiver vazia."
                     ),
                     disnake.SelectOption(
+                        label="Last.fm scrobble", emoji="<:Lastfm:1278883704097341541>",
+                        value=PlayerControls.lastfm_scrobble,
+                        description="Ativar/desativar o scrobble/registro de músicas na sua conta do last.fm."
+                    ),
+                    disnake.SelectOption(
                         label= ("Desativar" if player.restrict_mode else "Ativar") + " o modo restrito", emoji="🔐",
                         value=PlayerControls.restrict_mode,
                         description="Apenas DJ's/Staff's podem usar comandos restritos."
@@ -153,12 +158,11 @@ class EmbedLinkSkin:
 
 
         if isinstance(player.last_channel, disnake.VoiceChannel):
-            txt = "Desativar" if player.stage_title_event else "Ativar"
             data["components"][5].options.append(
                 disnake.SelectOption(
-                    label= f"{txt} status automático", emoji="📢",
-                    value=PlayerControls.stage_announce,
-                    description=f"{txt} o status automático do canal de voz."
+                    label="Status automático", emoji="📢",
+                    value=PlayerControls.set_voice_status,
+                    description="Configurar o status automático do canal de voz."
                 )
             )
 

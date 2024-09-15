@@ -1,5 +1,5 @@
 # MuseHeart-MusicBot
-## bot de música programado em python com player interativo, comandos barra/slash e muito mais.
+## bot de música programado em python com player interativo, comandos de barra + slash, integração com o [last.fm](https://www.last.fm/) e muito mais.
 
 ## Página com invites e algumas infos/screenshots da Muse Heart e funcionamento dessa source: [clique aqui](https://gist.github.com/zRitsu/4875008554a00c3c372b2df6dcdf437f#file-muse_heart_invites-md).
 
@@ -19,7 +19,11 @@ Mais previews:
 
 - Comandos de barra / Slash commands
 
-[![](https://i.ibb.co/t8yKKr9/image.png)](https://i.ibb.co/t8yKKr9/image.png)
+[![](https://i.ibb.co/nmhYWrK/muse-heart-slashcommands.png)](https://i.ibb.co/nmhYWrK/muse-heart-slashcommands.png)
+
+- Integração com o [last.fm](https://www.last.fm/) para scrobbles (outras funcionalidades em breve).
+
+[![](https://i.ibb.co/SXm608z/muse-heart-lastfm.png)](https://i.ibb.co/SXm608z/muse-heart-lastfm.png)
 
 - Player controller: modo fixo/estendido com canal e conversa de song requests (skin: default), configurável com o comando: /setup
 
@@ -28,7 +32,6 @@ Mais previews:
 - Player controller: modo fixo/estendido com canal de song-request em forum com suporte a status automático no canal de voz e palco
 
 [![](https://i.ibb.co/9Hm5cyG/playercontrollerforum.png)](https://i.ibb.co/9Hm5cyG/playercontrollerforum.png)
-
 
 * Há diversas outras skins, veja todas usando o comando /change_skin (você também pode criar outras, use os modelos padrões que estão na pasta [skins](utils/music/skins/) como referência, crie uma cópia com outro nome e modifique a seu gosto).
 
@@ -144,7 +147,7 @@ bash source_update.sh
 
 Nota: há mais alguns guias na [wiki](https://github.com/zRitsu/MuseHeart-MusicBot/wiki).
 
-### Observaçoes importantes:
+### Observações importantes:
 
 * Você pode usar essa source como alternativa de self-hosting do meu bot principal (Muse Heart) pra hospedar/rodar seu próprio bot de música para uso privado ou em servidores públicos no qual você gerencia (que você tenha permissão de adicionar seu próprio bot no servidor). Entretanto não recomendo distribuir o bot usando essa source publicamente por não estar otimizado o suficiente pra lidar com alta demanda de servidores, mas se mesmo assim decidir fazer isso o bot terá que estar sob a [licença](/LICENSE) da source original e dependendo de onde o bot estiver sendo divulgado (ex: botlists) há possibilidade de seu bot ser apontado pelo uso dessa source.
 
@@ -167,5 +170,6 @@ Nota: há mais alguns guias na [wiki](https://github.com/zRitsu/MuseHeart-MusicB
 * [DisnakeDev](https://github.com/DisnakeDev) (disnake) e ao Rapptz pelo [discord.py](https://github.com/Rapptz/discord.py) original
 * [Pythonista Guild](https://github.com/PythonistaGuild) (wavelink)
 * [Lavalink-Devs](https://github.com/lavalink-devs) (lavalink e lavaplayer)
+* [DarrenOfficial](https://lavalink-list.darrennathanael.com/) Lavalink serverlist (Usuários que publicaram seus servidores lavalink estão listados no comando about junto com website/link).
 * E a todos os membros que me me ajudaram bastante com reports de erros (sendo nas [issues](https://github.com/zRitsu/MuseHeart-MusicBot/issues) e no servidor do discord)
 * Demais atribuições podem ser conferidas no [dependency graph](https://github.com/zRitsu/MuseHeart-MusicBot/network/dependencies)

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import datetime
+import itertools
 from os.path import basename
 
 import disnake
@@ -69,25 +70,25 @@ class DefaultProgressbarStaticSkin:
         vc_txt = ""
         queue_img = ""
 
-        txt = f"[`{player.current.single_title}`]({player.current.uri or player.current.search_uri})\n\n" \
-              f"> 💠 **⠂Por:** {player.current.authors_md}"
+        txt = f"-# [`{player.current.single_title}`]({player.current.uri or player.current.search_uri})\n\n" \
+              f"> -# 💠 **⠂Por:** {player.current.authors_md}"
 
         if not player.current.autoplay:
-            txt += f"\n> ✋ **⠂Pedido por:** <@{player.current.requester}>"
+            txt += f"\n> -# ✋ **⠂Pedido por:** <@{player.current.requester}>"
         else:
             try:
                 mode = f" [`Recomendação`]({player.current.info['extra']['related']['uri']})"
             except:
                 mode = "`Recomendação`"
-            txt += f"\n> 👍 **⠂Adicionado via:** {mode}"
+            txt += f"\n> -# 👍 **⠂Adicionado via:** {mode}"
 
         try:
-            vc_txt = f"\n> *️⃣ **⠂Canal de voz:** {player.guild.me.voice.channel.mention}"
+            vc_txt = f"\n> -# *️⃣ **⠂Canal de voz:** {player.guild.me.voice.channel.mention}"
         except AttributeError:
             pass
 
         if player.current.track_loops:
-            txt += f"\n> 🔂 **⠂Repetições restante:** `{player.current.track_loops}`"
+            txt += f"\n> -# 🔂 **⠂Repetições restante:** `{player.current.track_loops}`"
 
         if player.loop:
             if player.loop == 'current':
@@ -96,21 +97,21 @@ class DefaultProgressbarStaticSkin:
             else:
                 e = '🔁'
                 m = 'Fila'
-            txt += f"\n> {e} **⠂Modo de repetição:** `{m}`"
+            txt += f"\n> -# {e} **⠂Modo de repetição:** `{m}`"
 
         if player.current.album_name:
-            txt += f"\n> 💽 **⠂Álbum:** [`{fix_characters(player.current.album_name, limit=20)}`]({player.current.album_url})"
+            txt += f"\n> -# 💽 **⠂Álbum:** [`{fix_characters(player.current.album_name, limit=20)}`]({player.current.album_url})"
 
         if player.current.playlist_name:
-            txt += f"\n> 📑 **⠂Playlist:** [`{fix_characters(player.current.playlist_name, limit=20)}`]({player.current.playlist_url})"
+            txt += f"\n> -# 📑 **⠂Playlist:** [`{fix_characters(player.current.playlist_name, limit=20)}`]({player.current.playlist_url})"
 
         if player.keep_connected:
-            txt += "\n> ♾️ **⠂Modo 24/7:** `Ativado`"
+            txt += "\n> -# ♾️ **⠂Modo 24/7:** `Ativado`"
 
         txt += f"{vc_txt}\n"
 
         if player.command_log:
-            txt += f"> {player.command_log_emoji} **⠂Última Interação:** {player.command_log}\n"
+            txt += f"> -# {player.command_log_emoji} **⠂Última Interação:** {player.command_log}\n"
 
         txt += duration
 
@@ -186,15 +187,15 @@ class DefaultProgressbarStaticSkin:
                 if has_stream:
                     duration = time_format(t.duration) if not t.is_stream else '🔴 Ao vivo'
 
-                    queue_txt += f"`┌ {n+1})` [`{fix_characters(t.title, limit=34)}`]({t.uri})\n" \
-                           f"`└ ⏲️ {duration}`" + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "") + \
+                    queue_txt += f"-# `┌ {n+1})` [`{fix_characters(t.title, limit=34)}`]({t.uri})\n" \
+                           f"-# `└ ⏲️ {duration}`" + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "") + \
                            f" **|** `👍⠂Recomendada`\n"
 
                 else:
                     duration = f"<t:{int((current_time + datetime.timedelta(milliseconds=queue_duration)).timestamp())}:R>"
 
-                    queue_txt += f"`┌ {n+1})` [`{fix_characters(t.title, limit=34)}`]({t.uri})\n" \
-                           f"`└ ⏲️` {duration}" + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "") + \
+                    queue_txt += f"-# `┌ {n+1})` [`{fix_characters(t.title, limit=34)}`]({t.uri})\n" \
+                           f"-# `└ ⏲️` {duration}" + (f" - `Repetições: {t.track_loops}`" if t.track_loops else "") + \
                            f" **|** `👍⠂Recomendada`\n"
 
             embed_queue = disnake.Embed(title="Próximas músicas recomendadas:", color=player.bot.get_color(player.guild.me),
@@ -269,6 +270,11 @@ class DefaultProgressbarStaticSkin:
                         description="Sistema de adição de música automática quando a fila estiver vazia."
                     ),
                     disnake.SelectOption(
+                        label="Last.fm scrobble", emoji="<:Lastfm:1278883704097341541>",
+                        value=PlayerControls.lastfm_scrobble,
+                        description="Ativar/desativar o scrobble/registro de músicas na sua conta do last.fm."
+                    ),
+                    disnake.SelectOption(
                         label=("Desativar" if player.restrict_mode else "Ativar") + " o modo restrito", emoji="🔐",
                         value=PlayerControls.restrict_mode,
                         description="Apenas DJ's/Staff's podem usar comandos restritos."
@@ -276,6 +282,22 @@ class DefaultProgressbarStaticSkin:
                 ]
             ),
         ]
+
+        if (queue:=player.queue or player.queue_autoplay):
+            data["components"].append(
+                disnake.ui.Select(
+                    placeholder="Próximas músicas:",
+                    custom_id="musicplayer_queue_dropdown",
+                    min_values=0, max_values=1,
+                    options=[
+                        disnake.SelectOption(
+                            label=f"{n+1}. {fix_characters(t.author, 18)}",
+                            description=fix_characters(t.title, 47),
+                            value=f"{n:02d}.{t.title[:96]}"
+                        ) for n, t in enumerate(itertools.islice(queue, 25))
+                    ]
+                )
+            )
 
         if player.current.ytid and player.node.lyric_support:
             data["components"][5].options.append(
@@ -288,12 +310,11 @@ class DefaultProgressbarStaticSkin:
 
 
         if isinstance(player.last_channel, disnake.VoiceChannel):
-            txt = "Desativar" if player.stage_title_event else "Ativar"
             data["components"][5].options.append(
                 disnake.SelectOption(
-                    label= f"{txt} status automático", emoji="📢",
-                    value=PlayerControls.stage_announce,
-                    description=f"{txt} o status automático do canal de voz."
+                    label="Status automático", emoji="📢",
+                    value=PlayerControls.set_voice_status,
+                    description="Configurar o status automático do canal de voz."
                 )
             )
 

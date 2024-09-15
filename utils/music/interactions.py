@@ -9,20 +9,22 @@ import traceback
 from base64 import b64decode, b64encode
 from copy import deepcopy
 from io import BytesIO
+from itertools import islice
 from typing import List, Union, Optional, TYPE_CHECKING, Literal
 
 import disnake
 from disnake.ext import commands
 
 from utils.db import DBModel
+from utils.music.audio_sources.deezer import deezer_regex
+from utils.music.audio_sources.spotify import spotify_regex_w_user
 from utils.music.checks import check_pool_bots
 from utils.music.converters import time_format, fix_characters, URL_REG
 from utils.music.errors import GenericError
 from utils.music.models import LavalinkPlayer, LavalinkTrack
 from utils.music.skin_utils import skin_converter
-from utils.music.spotify import spotify_regex_w_user
 from utils.others import check_cmd, CustomContext, send_idle_embed, music_source_emoji_url, \
-    music_source_emoji_id, PlayerControls, get_source_emoji_cfg
+    PlayerControls, get_source_emoji_cfg
 
 if TYPE_CHECKING:
     from utils.client import BotCore
@@ -157,6 +159,13 @@ class QueueInteraction(disnake.ui.View):
         self.add_item(update_q)
 
     async def move_callback(self, inter: disnake.MessageInteraction):
+
+        try:
+            await check_cmd(self.bot.get_slash_command("move"), inter)
+        except Exception as e:
+            inter.bot.dispatch("interaction_player_error", inter, e)
+            return
+
         await inter.response.send_modal(
             ViewModal(
                 view=self, title="Mover música selecionada", custom_id="queue_move_modal",
@@ -181,7 +190,10 @@ class QueueInteraction(disnake.ui.View):
                     await inter.send("Você deve usar um número válido...", ephemeral=True)
                     return
 
-                await check_cmd(self.bot.get_slash_command("move"), inter)
+                try:
+                    await check_cmd(self.bot.get_slash_command("move"), inter)
+                except AttributeError:
+                    pass
 
                 player: LavalinkPlayer = self.bot.music.players[self.user.guild.id]
 
@@ -401,16 +413,95 @@ class QueueInteraction(disnake.ui.View):
 
         return True
 
+class EmbedPaginatorInteraction(disnake.ui.View):
+    def __init__(self, user: disnake.Member, embeds: List[disnake.Embed], *, timeout=180, max_itens=25):
+        super().__init__(timeout=timeout)
+        self.user = user
+        self.current_page = 0
+        self.max_page = len(embeds)-1
+        self.inter: Optional[disnake.MessageInteraction] = None
+        self.embeds = embeds
+        self.load_components()
+
+    async def interaction_check(self, interaction: disnake.MessageInteraction) -> bool:
+
+        if interaction.user.id == self.user.id:
+            return True
+
+        await interaction.send(f"Apenas {self.user.mention} pode interagir aqui.", ephemeral = True)
+
+    def load_components(self):
+
+        self.clear_items()
+
+        back_button = disnake.ui.Button(emoji="⬅")
+        if self.current_page == 0:
+            back_button.disabled = True
+        else:
+            back_button.label = str(self.current_page)
+        back_button.callback = self.back_callback
+        self.add_item(back_button)
+
+        next_button = disnake.ui.Button(emoji="➡")
+        if self.current_page == self.max_page:
+            next_button.disabled = True
+            next_button.label = f"{self.current_page + 1} / {self.max_page + 1}"
+        else:
+            next_button.label = f"{self.current_page + 2} / {self.max_page + 1}"
+        next_button.callback = self.next_callback
+        self.add_item(next_button)
+
+        button = disnake.ui.Button(label="Fechar", emoji="❌")
+        button.callback = self.cancel_callback
+        self.add_item(button)
+
+    async def back_callback(self, interaction: disnake.MessageInteraction):
+        self.inter = interaction
+        if self.current_page == 0:
+            self.current_page = self.max_page
+        else:
+            self.current_page -= 1
+        self.load_components()
+        kwargs = {}
+        if self.embeds:
+            kwargs["embed"] = self.embeds[self.current_page]
+        await interaction.response.edit_message(view=self, **kwargs)
+
+    async def next_callback(self, interaction: disnake.MessageInteraction):
+        self.inter = interaction
+        if self.current_page == self.max_page:
+            self.current_page = 0
+        else:
+            self.current_page += 1
+        self.load_components()
+        kwargs = {}
+        if self.embeds:
+            kwargs["embed"] = self.embeds[self.current_page]
+        await interaction.response.edit_message(view=self, **kwargs)
+
+    async def cancel_callback(self, interaction: disnake.MessageInteraction):
+        self.inter = interaction
+        self.selected = False
+        self.inter = interaction
+        self.stop()
+
+    async def callback(self, interaction: disnake.MessageInteraction):
+        self.selected = interaction.data.values[0]
+        self.inter = interaction
+        self.stop()
+
+
 class SelectInteraction(disnake.ui.View):
 
-    def __init__(self, user: disnake.Member, opts: List[disnake.SelectOption], *, timeout=180):
+    def __init__(self, user: disnake.Member, opts: List[disnake.SelectOption], *, timeout=180, max_itens=25):
         super().__init__(timeout=timeout)
         self.user = user
         self.selected = None
-        self.item_pages = list(disnake.utils.as_chunks(opts, 25))
+        self.item_pages = list(disnake.utils.as_chunks(opts, max_itens))
         self.current_page = 0
         self.max_page = len(self.item_pages)-1
         self.inter = None
+        self.embeds = []
 
         self.load_components()
 
@@ -426,10 +517,19 @@ class SelectInteraction(disnake.ui.View):
         if len(self.item_pages) > 1:
 
             back_button = disnake.ui.Button(emoji="⬅")
+            if self.current_page == 0:
+                back_button.disabled = True
+            else:
+                back_button.label = str(self.current_page)
             back_button.callback = self.back_callback
             self.add_item(back_button)
 
             next_button = disnake.ui.Button(emoji="➡")
+            if self.current_page == self.max_page:
+                next_button.disabled = True
+                next_button.label = f"{self.current_page + 1} / {self.max_page + 1}"
+            else:
+                next_button.label = f"{self.current_page + 2} / {self.max_page + 1}"
             next_button.callback = self.next_callback
             self.add_item(next_button)
 
@@ -450,15 +550,21 @@ class SelectInteraction(disnake.ui.View):
         else:
             self.current_page -= 1
         self.load_components()
-        await interaction.response.edit_message(view=self)
+        kwargs = {}
+        if self.embeds:
+            kwargs["embed"] = self.embeds[self.current_page]
+        await interaction.response.edit_message(view=self, **kwargs)
 
     async def next_callback(self, interaction: disnake.MessageInteraction):
-        if self.current_page == self.max_page:
+        if self.current_page >= self.max_page:
             self.current_page = 0
         else:
             self.current_page += 1
         self.load_components()
-        await interaction.response.edit_message(view=self)
+        kwargs = {}
+        if self.embeds:
+            kwargs["embed"] = self.embeds[self.current_page]
+        await interaction.response.edit_message(view=self, **kwargs)
 
     async def cancel_callback(self, interaction: disnake.MessageInteraction):
         self.selected = False
@@ -1042,7 +1148,7 @@ class FavModalAdd(disnake.ui.Modal):
                     return
 
                 try:
-                    result = await self.view.bot.loop.run_in_executor(None, lambda: self.view.bot.spotify.user(user_id))
+                    result = await self.view.bot.spotify.get_user_info(user_id)
                 except Exception as e:
                     await inter.edit_original_message(
                         embed=disnake.Embed(
@@ -1063,7 +1169,36 @@ class FavModalAdd(disnake.ui.Modal):
                     )
                     return
 
-                data = {"title": f"[SP]: {result['display_name'][:90]}", "url": result["external_urls"]["spotify"]}
+                data = {"title": f"[SP]: {result['display_name'][:90]}", "url": result["external_urls"]["spotify"],
+                        "avatar": result["images"][-1]['url']}
+
+            elif (matches:=deezer_regex.match(url)):
+
+                url_type, url_id = matches.groups()[-2:]
+
+                if url_type != "profile":
+                    await inter.edit_original_message(
+                        embed=disnake.Embed(
+                            description=f"**Você deve usar link de um perfil de usuário do deezer.** {url}",
+                            color=disnake.Color.red()
+                        )
+                    )
+                    return
+
+                try:
+                    result = await self.view.bot.deezer.get_user_info(int(url_id))
+                except Exception as e:
+                    await inter.edit_original_message(
+                        embed=disnake.Embed(
+                            description="**Ocorreu um erro ao obter informações do spotify:** ```py\n"
+                                        f"{repr(e)}```",
+                            color=self.view.bot.get_color()
+                        )
+                    )
+                    traceback.print_exc()
+                    return
+
+                data = {"title": f"[DZ]: {result['name'][:90]}", "url": result['link'], "avatar": result["picture"]}
 
             else:
 
@@ -1134,7 +1269,12 @@ class FavModalAdd(disnake.ui.Modal):
 
             title = fix_characters(data['title'], 80)
 
-            self.view.data["integration_links"][title] = data['url']
+            self.view.data["integration_links"][title] = {"url": data['url']}
+
+            try:
+                self.view.data["integration_links"][title]["avatar"] = data["avatar"]
+            except KeyError:
+                pass
 
             await self.view.bot.update_global_data(inter.author.id, self.view.data, db_name=DBModel.users)
 
@@ -1154,12 +1294,12 @@ class FavModalAdd(disnake.ui.Modal):
                 ), view=None
             )
 
-            self.view.log = f"[`{data['title']}`]({data['url']}) foi adicionado nas suas integrações."
+            self.view.log = f"[`{data['title']}`](<{data['url']}>) foi adicionado nas suas integrações."
 
         if not isinstance(self.view.ctx, CustomContext):
-            await self.view.ctx.edit_original_message(embed=self.view.build_embed(), view=self.view)
+            await self.view.ctx.edit_original_message(content=self.view.build_txt(), view=self.view)
         elif self.view.message:
-            await self.view.message.edit(embed=self.view.build_embed(), view=self.view)
+            await self.view.message.edit(content=self.view.build_txt(), view=self.view)
 
 class FavMenuView(disnake.ui.View):
 
@@ -1178,6 +1318,7 @@ class FavMenuView(disnake.ui.View):
         self.prefix = prefix
         self.components_updater_task = bot.loop.create_task(self.auto_update())
         self.is_owner = is_owner
+        self.light_mode = False
 
         if not self.guild:
             for b in self.bot.pool.get_guild_bots(ctx.guild_id):
@@ -1186,41 +1327,46 @@ class FavMenuView(disnake.ui.View):
                     self.guild = guild
                     break
 
+            if not self.guild:
+                self.light_mode = True
+
     def update_components(self):
 
         self.clear_items()
 
-        mode_select = disnake.ui.Select(
-            options=[
-                disnake.SelectOption(label="Gerenciador de Favoritos", value=f"fav_view_mode_{ViewMode.fav_manager}", emoji="⭐",
-                                     default=self.mode == ViewMode.fav_manager)
-            ], min_values=1, max_values=1
-        )
+        if not self.light_mode:
 
-        if self.bot.config["USE_YTDL"] or self.bot.spotify:
+            mode_select = disnake.ui.Select(
+                options=[
+                    disnake.SelectOption(label="Gerenciador de Favoritos", value=f"fav_view_mode_{ViewMode.fav_manager}", emoji="⭐",
+                                         default=self.mode == ViewMode.fav_manager)
+                ], min_values=1, max_values=1
+            )
+
             mode_select.append_option(
                 disnake.SelectOption(label="Gerenciador de Integrações", value=f"fav_view_mode_{ViewMode.integrations_manager}", emoji="💠",
                                      default=self.mode == ViewMode.integrations_manager)
             )
 
-        if self.guild and (self.ctx.author.guild_permissions.manage_guild or self.is_owner):
-            mode_select.options.insert(1, disnake.SelectOption(label="Gerenciador de Playlists do Servidor",
-                                                               value=f"fav_view_mode_{ViewMode.guild_fav_manager}", emoji="📌",
-                                                               default=self.mode == ViewMode.guild_fav_manager))
+            if self.guild and (self.ctx.author.guild_permissions.manage_guild or self.is_owner):
+                mode_select.options.insert(1, disnake.SelectOption(label="Gerenciador de Playlists do Servidor",
+                                                                   value=f"fav_view_mode_{ViewMode.guild_fav_manager}", emoji="📌",
+                                                                   default=self.mode == ViewMode.guild_fav_manager))
 
-        if len(mode_select.options) < 2:
-            mode_select.disabled = True
+            if len(mode_select.options) < 2:
+                mode_select.disabled = True
 
-        mode_select.callback = self.mode_callback
-        self.add_item(mode_select)
+            mode_select.callback = self.mode_callback
+            self.add_item(mode_select)
 
         if self.mode == ViewMode.fav_manager:
 
             if self.data["fav_links"]:
-                fav_select = disnake.ui.Select(options=[
-                    disnake.SelectOption(label=k, emoji=music_source_emoji_url(v)) for k, v in
-                    list(self.data["fav_links"].items())[:25] # TODO: Lidar depois com os dados existentes que excedem a quantidade permitida
-                ], min_values=1, max_values=1)
+                opts = []
+                for k, v in list(self.data["fav_links"].items())[:25]: # TODO: Lidar depois com os dados existentes que excedem a quantidade permitida
+                    emoji, platform = music_source_emoji_url(v)
+                    opts.append(disnake.SelectOption(label=k, emoji=emoji, description=platform))
+                fav_select = disnake.ui.Select(options=opts, min_values=1, max_values=1)
                 fav_select.options[0].default = True
                 self.current = fav_select.options[0].label
                 fav_select.callback = self.select_callback
@@ -1232,8 +1378,6 @@ class FavMenuView(disnake.ui.View):
 
             for b in sorted(self.bot.pool.get_guild_bots(self.guild.id), key=lambda b: b.identifier):
                 if b.bot_ready and b.user in self.guild.members:
-                    if not bots_in_guild:
-                        self.bot = b
                     bots_in_guild.append(disnake.SelectOption(emoji="🎶",
                                                               label=f"Bot: {b.user.display_name}"[:25],
                                                               value=f"bot_select_{b.user.id}",
@@ -1246,7 +1390,7 @@ class FavMenuView(disnake.ui.View):
 
             if self.guild_data["player_controller"]["fav_links"]:
                 fav_select = disnake.ui.Select(options=[
-                    disnake.SelectOption(label=k, emoji=music_source_emoji_url(v['url']),
+                    disnake.SelectOption(label=k, emoji=music_source_emoji_url(v['url'])[0],
                                          description=v.get("description")) for k, v in
                     list(self.guild_data["player_controller"]["fav_links"].items())[:25] # TODO: Lidar depois com os dados existentes que excedem a quantidade permitida
                 ], min_values=1, max_values=1)
@@ -1258,14 +1402,15 @@ class FavMenuView(disnake.ui.View):
         elif self.mode == ViewMode.integrations_manager:
 
             if self.data["integration_links"]:
-
-                integration_select = disnake.ui.Select(options=[
-                    disnake.SelectOption(
-                        label=k[5:], value=k,
-                        emoji=music_source_emoji_id(k)) for k, v in list(self.data["integration_links"].items())[:25] # TODO: Lidar depois com os dados existentes que excedem a quantidade permitida
-                ], min_values=1, max_values=1)
+                opts = []
+                for k, v in list(self.data["integration_links"].items())[:25]: # TODO: Lidar depois com os dados existentes que excedem a quantidade permitida
+                    if isinstance(v, dict):
+                        v = v["url"]
+                    emoji, platform = music_source_emoji_url(v)
+                    opts.append(disnake.SelectOption(label=k[5:], emoji=emoji, description=platform, value=k))
+                integration_select = disnake.ui.Select(options=opts, min_values=1, max_values=1)
                 integration_select.options[0].default = True
-                self.current = integration_select.options[0].label
+                self.current = integration_select.options[0].value
                 integration_select.callback = self.select_callback
                 self.add_item(integration_select)
 
@@ -1325,9 +1470,10 @@ class FavMenuView(disnake.ui.View):
         self.add_item(import_button)
 
         if self.mode == ViewMode.fav_manager:
-            play_button = disnake.ui.Button(label="Tocar o favorito selecionado", emoji="▶", custom_id="favmanager_play_button")
-            play_button.callback = self.play_callback
-            self.add_item(play_button)
+            if self.data["fav_links"] and not self.light_mode:
+                play_button = disnake.ui.Button(label="Tocar o favorito selecionado", emoji="▶", custom_id="favmanager_play_button")
+                play_button.callback = self.play_callback
+                self.add_item(play_button)
 
         elif self.mode == ViewMode.integrations_manager:
             if self.data["integration_links"]:
@@ -1348,12 +1494,12 @@ class FavMenuView(disnake.ui.View):
 
             user, data, url = await self.bot.wait_for("fav_add", check=lambda user, data, url: user.id == self.ctx.author.id)
 
-            self.log = f"{url} foi adicionado nos seus favoritos."
+            self.log = f"<{url}> foi adicionado nos seus favoritos."
 
             if not isinstance(self.ctx, CustomContext):
-                await self.ctx.edit_original_message(embed=self.build_embed(), view=self)
+                await self.ctx.edit_original_message(content=self.build_txt(), view=self)
             elif self.message:
-                await self.message.edit(embed=self.build_embed(), view=self)
+                await self.message.edit(content=self.build_txt(), view=self)
 
     async def on_timeout(self):
 
@@ -1385,118 +1531,113 @@ class FavMenuView(disnake.ui.View):
 
         self.stop()
 
-    def build_embed(self):
+    def build_txt(self):
 
         supported_platforms = []
 
         if self.mode == ViewMode.integrations_manager:
 
             if self.bot.config["USE_YTDL"]:
-                supported_platforms.extend(["[31;1mYoutube[0m", "[33;1mSoundcloud[0m"])
+                supported_platforms.extend(["[`Youtube`](<https://www.youtube.com/>)", "[`Soundcloud`](<https://soundcloud.com/>)"])
 
             if self.bot.spotify:
-                supported_platforms.append("[32;1mSpotify[0m")
+                supported_platforms.append("[`Spotify`](<https://open.spotify.com/>)")
 
-            if not supported_platforms:
-                return
+            supported_platforms.append("[`Deezer`](<https://www.deezer.com/>)")
 
         self.update_components()
 
         try:
-            cmd = f"</play:" + str(self.bot.pool.controller_bot.get_global_command_named("play", cmd_type=disnake.ApplicationCommandType.chat_input).id) + ">"
+            cmd = f"</play:" + str(self.bot.get_global_command_named("play", cmd_type=disnake.ApplicationCommandType.chat_input).id) + ">"
         except AttributeError:
             cmd = "/play"
 
         if self.mode == ViewMode.fav_manager:
-            embed = disnake.Embed(
-                title="Gerenciador de favoritos.",
-                colour=self.bot.get_color(),
-            )
+
+            txt = "### Gerenciador de favoritos.\n"
 
             if not self.data["fav_links"]:
-                embed.description = "Você não possui favoritos (clique no botão de adicionar abaixo)."
+                txt += "Você não possui favoritos (clique no botão de adicionar abaixo).\n"
 
             else:
                 def format_fav(index, data):
                     name, url = data
                     e = get_source_emoji_cfg(self.bot, url)
                     if e:
-                        return f"` {index} ` {e} [`{name}`]({url})"
-                    return f"` {index} ` [`{name}`]({url})"
+                        return f"` {index:02} ` {e} [`{fix_characters(name, 45)}`](<{url}>)"
+                    return f"` {index:02} ` [`{fix_characters(name, 45)}`](<{url}>)"
 
-                embed.description = f"**Seus favoritos atuais:**\n\n" + "\n".join(
-                    f"> {format_fav(n+1, d)}" for n, d in enumerate(self.data["fav_links"].items())
+                txt += "\n".join(
+                    f"> {format_fav(n+1, d)}" for n, d in enumerate(islice(self.data["fav_links"].items(), 25))
                 )
 
-            embed.add_field(name="**Como usá-los?**", inline=False,
-                            value=f"* Usando o comando {cmd} (selecionando o favorito no preenchimento automático da busca)\n"
-                                  "* Clicando no botão/select de tocar favorito/integração do player.\n"
-                                  f"* Usando o comando {self.prefix}{self.bot.get_cog('Music').play_legacy.name} sem incluir um nome ou link de uma música/vídeo.\n"
-                                  "* Usando o botão de tocar favorito abaixo.")
+            if not self.light_mode:
+                txt += "\n\n**Como usá-los?**\n" \
+                       f"* Usando o comando {cmd} (selecionando o favorito no preenchimento automático da busca)\n" \
+                        "* Clicando no botão/select de tocar favorito/integração do player.\n" \
+                        f"* Usando o comando {self.prefix}{self.bot.get_cog('Music').play_legacy.name} sem incluir um nome ou link de uma música/vídeo.\n" \
+                        "* Usando o botão de tocar favorito abaixo.\n"
 
         elif self.mode == ViewMode.guild_fav_manager:
-            embed = disnake.Embed(
-                title="Gerenciador de favoritos do servidor.",
-                colour=self.bot.get_color(),
-            )
-            embed.set_author(name=f"Bot selecionado: {self.bot.user.display_name}", icon_url=self.bot.user.display_avatar.url)
+
+            txt = "### Gerenciador de favoritos do servidor.\n"
 
             if not self.guild_data["player_controller"]["fav_links"]:
-                embed.description = f"Não há links adicionados no bot {self.bot.user.mention} (clique no botão de adicionar abaixo)."
+                txt += f"Não há links adicionados no bot {self.bot.user.mention} (clique no botão de adicionar abaixo).\n"
 
             else:
                 def format_gfav(index, data):
                     name, data = data
                     e = get_source_emoji_cfg(self.bot, data['url'])
                     if e:
-                        return f"` {index} ` {e} [`{name}`]({data['url']})"
-                    return f"` {index} ` [`{name}`]({data['url']})"
+                        return f"` {index:02} ` {e} [`{fix_characters(name, 45)}`](<{data['url']}>)"
+                    return f"` {index:02} ` [`{fix_characters(name, 45)}`](<{data['url']}>)"
 
-                embed.description = f"**Links atuais no bot {self.bot.user.mention}:**\n\n" + "\n".join(
-                    f"> {format_gfav(n+1, d)}" for n, d in enumerate(self.guild_data["player_controller"]["fav_links"].items())
+                txt += f"**Links atuais no bot {self.bot.user.mention}:**\n" + "\n".join(
+                    f"> {format_gfav(n+1, d)}" for n, d in enumerate(islice(self.guild_data["player_controller"]["fav_links"].items(), 25))
                 )
 
-            embed.add_field(name="**Como usá-los?**", inline=False,
-                            value=f"* Usando o menu de seleção do player durante o modo de espera.")
+                txt += "\n\n**Como usá-los?**\n" \
+                        f"* Usando o menu de seleção do player durante o modo de espera.\n" \
+                       f"\n`Bot selecionado:` {self.bot.user.mention}"
 
         elif self.mode == ViewMode.integrations_manager:
-            embed = disnake.Embed(
-                title="Gerenciador de integrações de canais/perfis com playlists públicas.",
-                colour=self.bot.get_color(),
-            )
+
+            txt = "### Gerenciador de integrações de canais/perfis com playlists públicas.\n"
 
             if not self.data["integration_links"]:
-                embed.description = "**Você não possui integrações no momento (clique no botão de adicionar abaixo).**"
+                txt += "**Você não possui integrações no momento (clique no botão de adicionar abaixo).**\n"
 
             else:
                 def format_itg(bot, index, data):
                     name, url = data
+                    if isinstance(url, dict):
+                        url = url["url"]
                     e = get_source_emoji_cfg(bot, url)
                     if e:
-                        return f"` {index} ` {e} [`{name[5:]}`]({url})"
-                    return f"` {index} ` [`{name}`]({url})"
+                        return f"` {index:02} ` {e} [`{fix_characters(name[5:], 45)}`](<{url}>)"
+                    return f"` {index:02} ` [`{fix_characters(name, 45)}`](<{url}>)"
 
-                embed.description = f"**Suas integrações atuais:**\n\n" + "\n".join(
-                    f"> {format_itg(self.bot, n+1, d)}" for n, d in enumerate(self.data["integration_links"].items()))
+                txt += f"### Suas integrações atuais:\n" + "\n".join(
+                    f"> {format_itg(self.bot, n+1, d)}" for n, d in enumerate(islice(self.data["integration_links"].items(), 25)))
 
-                embed.add_field(name="**Como tocar a playlist de uma integração?**", inline=False,
-                                value=f"* Usando o comando {cmd} (selecionando a integração no preenchimento automático da busca)\n"
-                                      "* Clicando no botão/select de tocar favorito/integração do player.\n"
-                                      f"* Usando o comando {self.prefix}{self.bot.get_cog('Music').play_legacy.name} sem incluir um nome ou link de uma música/vídeo.\n"
-                                      "* Usando o botão de tocar integração abaixo.")
+                if not self.light_mode:
+                    txt += "\n\n**Como usá-los?**\n" \
+                           f"* Usando o comando {cmd} (selecionando o favorito no preenchimento automático da busca)\n" \
+                           "* Clicando no botão/select de tocar favorito/integração do player.\n" \
+                           f"* Usando o comando {self.prefix}{self.bot.get_cog('Music').play_legacy.name} sem incluir um nome ou link de uma música/vídeo.\n" \
+                           "* Usando o botão de tocar favorito abaixo.\n"
 
         else:
             raise GenericError(f"**Modo não implementado:** {self.mode} | {type(self.mode)}")
 
         if self.log:
-            embed.add_field(name="Última interação:", value=self.log)
+            txt += f"\n**Última interação:**\n{self.log}\n"
 
         if self.mode == ViewMode.integrations_manager:
-            embed.add_field(
-                name="Links de perfis/canais suportados:", inline=False,
-                value=f"```ansi\n{', '.join(supported_platforms)}```"
-            )
-        return embed
+            txt += f"\n**Links de perfis/canais suportados:**\n{', '.join(supported_platforms)}"
+
+        return txt
 
     async def add_callback(self, inter: disnake.MessageInteraction):
         await inter.response.send_modal(FavModalAdd(name=None, url=None, view=self))
@@ -1555,11 +1696,7 @@ class FavMenuView(disnake.ui.View):
                 self.guild_data = await self.bot.get_data(inter.guild_id, db_name=DBModel.guilds)
 
         else:
-            try:
-                self.data = inter.global_user_data
-            except AttributeError:
-                self.data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
-                inter.global_user_data = self.data
+            self.data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
 
         if self.mode == ViewMode.fav_manager:
             try:
@@ -1596,8 +1733,14 @@ class FavMenuView(disnake.ui.View):
             self.log = f"Link {url} foi removido com sucesso da lista de favoritos do servidor!"
 
         elif self.mode == ViewMode.integrations_manager:
+
+            item = self.data["integration_links"][self.current]
+
+            if isinstance(inter, dict):
+                item = item['url']
+
             try:
-                url = f'[`{self.current}`]({self.data["integration_links"][self.current]})'
+                url = f'[`{self.current}`]({item})'
                 del self.data["integration_links"][self.current]
             except:
                 await inter.send(f"**Não há integração na lista com o nome:** {self.current}", ephemeral=True)
@@ -1607,22 +1750,22 @@ class FavMenuView(disnake.ui.View):
 
             self.log = f"Integração {url} foi removida com sucesso!"
 
-        await inter.edit_original_message(embed=self.build_embed(), view=self)
+        await inter.edit_original_message(content=self.build_txt(), view=self)
 
     async def bot_select(self, inter: disnake.MessageInteraction):
 
         value = int(inter.values[0][11:])
+
         for b in self.bot.pool.get_guild_bots(inter.guild_id):
             try:
                 if b.user.id == value:
                     self.bot = b
-                    break
             except AttributeError:
                 continue
 
         self.guild_data = await self.bot.get_data(inter.guild_id, db_name=DBModel.guilds)
 
-        await inter.response.edit_message(embed=self.build_embed(), view=self)
+        await inter.response.edit_message(content=self.build_txt(), view=self)
 
     async def clear_callback(self, inter: disnake.MessageInteraction):
 
@@ -1645,12 +1788,7 @@ class FavMenuView(disnake.ui.View):
 
             await inter.response.defer(ephemeral=True)
 
-            try:
-                self.data = inter.global_user_data
-            except AttributeError:
-                self.data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
-                inter.global_user_data = self.data
-
+            self.data = await self.bot.get_global_data(inter.author.id, db_name=DBModel.users)
 
         if self.mode == ViewMode.fav_manager:
             if not self.data["fav_links"]:
@@ -1713,10 +1851,12 @@ class FavMenuView(disnake.ui.View):
                              "conteúdo do arquivo e clique no botão \"importar\" e cole o conteudo no campo indicado.`",
                              ephemeral=True, file=disnake.File(fp, filename="integrations.json"))
 
+        self.current = None
+
         if not isinstance(self.ctx, CustomContext):
-            await self.ctx.edit_original_message(embed=self.build_embed(), view=self)
+            await self.ctx.edit_original_message(content=self.build_txt(), view=self)
         elif self.message:
-            await self.message.edit(embed=self.build_embed(), view=self)
+            await self.message.edit(content=self.build_txt(), view=self)
 
     async def import_callback(self, inter: disnake.MessageInteraction):
         await inter.response.send_modal(FavModalImport(view=self))
@@ -1739,7 +1879,7 @@ class FavMenuView(disnake.ui.View):
 
         try:
             cmd = f"</{cog.fav_manager.name}:" + str(
-                self.bot.pool.controller_bot.get_global_command_named(cog.fav_manager.name,
+                self.bot.get_global_command_named(cog.fav_manager.name,
                                                                       cmd_type=disnake.ApplicationCommandType.chat_input).id) + ">"
         except AttributeError:
             cmd = "/play"
@@ -1792,12 +1932,7 @@ class FavMenuView(disnake.ui.View):
         except:
             pass
 
-        await inter.response.edit_message(
-            embed=disnake.Embed(
-                description="**Gerenciador fechado.**",
-                color=self.bot.get_color(),
-            ), view=None
-        )
+        await inter.response.edit_message(content="**Gerenciador fechado.**", view=None)
         self.stop()
 
     async def mode_callback(self, inter: disnake.MessageInteraction):
@@ -1817,9 +1952,9 @@ class FavMenuView(disnake.ui.View):
                 self.guild_data = await self.bot.get_data(inter.guild_id, db_name=DBModel.guilds)
 
         if inter.response.is_done():
-            await inter.edit_original_message(embed=self.build_embed(), view=self)
+            await inter.edit_original_message(content=self.build_txt(), view=self)
         else:
-            await inter.response.edit_message(embed=self.build_embed(), view=self)
+            await inter.response.edit_message(content=self.build_txt(), view=self)
 
     async def select_callback(self, inter: disnake.MessageInteraction):
         self.current = inter.values[0]
@@ -1941,7 +2076,7 @@ class SetStageTitle(disnake.ui.View):
                "[34;1m{track.playlist}[0m -> Nome da playlist de origem da música (caso tenha)\n" \
                "[34;1m{requester.name}[0m -> Nome/Nick do membro que pediu a música\n" \
                "[34;1m{requester.id}[0m -> ID do membro que pediu a música```\n" \
-               "Exemplo: Tocando {track.title} | Por: {track.author}\n" \
+               "Exemplo: Tocando {track.title} | Por: {track.author}\n\n" \
                "`Nota: No canal de voz você pode usar custom emojis na mensagem do status (incluindo emoji de servers que eu não estou e de servers que você não está).`"
 
     def __init__(self, ctx: Union[CustomContext, disnake.Interaction], bot: BotCore, guild: disnake.Guild, data: dict):
@@ -1952,8 +2087,29 @@ class SetStageTitle(disnake.ui.View):
         self.guild = guild
         self.message = None
 
-    @disnake.ui.button(emoji='🔊', style=disnake.ButtonStyle.grey, label="Ativar/Desativar status")
-    async def set_status(self, button, interaction: disnake.MessageInteraction):
+        if self.data['voice_channel_status']:
+            setstatus_btn = disnake.ui.Button(label="Usar modelo atual", emoji="🎶",
+                                              style=disnake.ButtonStyle.grey,
+                                              custom_id="status_voice_channel_temp_current")
+            setstatus_btn.callback = self.setstatus_callback
+            self.add_item(setstatus_btn)
+
+        setstatus_modal_btn = disnake.ui.Button(label="Ativar/Desativar status",
+                                                emoji='🔊', style=disnake.ButtonStyle.grey)
+        setstatus_modal_btn.callback = self.set_status_modal
+        self.add_item(setstatus_modal_btn)
+
+        setstatus_perm_btn = disnake.ui.Button(label="Ativar/Desativar status (permanente)",
+                                               emoji='💾', style=disnake.ButtonStyle.grey)
+        setstatus_perm_btn.callback = self.set_status_perm
+        self.add_item(setstatus_perm_btn)
+
+
+    async def setstatus_callback(self, interaction: disnake.MessageInteraction):
+        await self.modal_handler(inter=interaction, values={"status_voice_value": self.data['voice_channel_status']})
+
+
+    async def set_status_modal(self, interaction: disnake.MessageInteraction):
 
         await interaction.response.send_modal(
             ViewModal(
@@ -1973,8 +2129,8 @@ class SetStageTitle(disnake.ui.View):
             )
         )
 
-    @disnake.ui.button(emoji='💾', style=disnake.ButtonStyle.grey, label="Ativar/Desativar status (permanente)")
-    async def set_status_perm(self, button, interaction: disnake.MessageInteraction):
+
+    async def set_status_perm(self, interaction: disnake.MessageInteraction):
 
         await interaction.response.send_modal(
             ViewModal(
@@ -1994,33 +2150,65 @@ class SetStageTitle(disnake.ui.View):
             )
         )
 
-    def build_embed(self):
+    def build_embeds(self):
 
-        txt = "### Definir status automático no canal de voz ou palco\n"
+        embeds = []
+
+        color = self.bot.get_color(self.guild.me)
+
+        embeds.append(
+            disnake.Embed(
+                description="### Definir status automático no canal de voz ou palco\n"
+                            "**Placeholders:** `(Pelo menos um placeholder deve ser incluso na mensagem de status)`\n"
+                            f"{self.placeholder_text}",
+                color=color)
+        )
 
         if self.data['voice_channel_status']:
-            txt += f"**Modelo permanente atual:**\n{self.data['voice_channel_status']}"
+            embeds.append(
+                disnake.Embed(title="**Modelo permanente atual:**", description=self.data['voice_channel_status'], color=self.bot.get_color(self.guild.me))
+            )
 
-        txt += f"**Placeholders:** `(Pelo menos um placeholder deve ser incluso na mensagem de status)`\n{self.placeholder_text}"
+        return embeds
 
-        return disnake.Embed(description=txt, color=self.bot.get_color(self.guild.me))
+    async def modal_handler(self, inter: disnake.ModalInteraction, values: dict = None):
 
-    async def modal_handler(self, inter: disnake.ModalInteraction):
+        try:
+            values = inter.text_values
+        except AttributeError:
+            pass
 
-        inter.text_values["status_voice_value"] = inter.text_values["status_voice_value"].replace("\n", " ").strip()
+        values["status_voice_value"] = values["status_voice_value"].replace("\n", " ").strip()
 
-        if inter.text_values["status_voice_value"] and not any(
-                p in inter.text_values["status_voice_value"] for p in self.placeholders):
+        if values["status_voice_value"] and not any(
+                p in values["status_voice_value"] for p in self.placeholders):
             await inter.send("**Você deve usar pelo menos um placeholder válido...**", ephemeral=True)
             return
 
         if inter.data.custom_id == "status_voice_channel_perm":
 
-            if self.data["voice_channel_status"] == inter.text_values["status_voice_value"]:
+            if self.data["voice_channel_status"] == values["status_voice_value"]:
                 await inter.send("**O status permanente atual é o mesmo do informado...**", ephemeral=True)
                 return
 
-            self.data["voice_channel_status"] = inter.text_values["status_voice_value"]
+            guild: Optional[disnake.Guild] = None
+
+            for b in self.bot.pool.get_guild_bots(inter.guild_id):
+                if (guild:=b.get_guild(inter.guild_id)):
+                    break
+
+            if not guild:
+                await inter.send("**Não há bots disponíveis no servidor, Adicione pelo menos um clicando no botão abaixo.**",
+                                components=[disnake.ui.Button(custom_id="bot_invite", label="Adicionar bots")], ephemeral=True)
+                return
+
+            inter.author = guild.get_member(inter.author.id)
+
+            if not inter.author.guild_permissions.manage_guild:
+                await inter.send("**Você não possui a permissão de gerenciar servidor para alterar o status do canal de voz**", ephemeral=True)
+                return
+
+            self.data["voice_channel_status"] = values["status_voice_value"]
 
             await inter.response.defer(ephemeral=True)
 
@@ -2031,11 +2219,11 @@ class SetStageTitle(disnake.ui.View):
                     p = b.music.players[inter.guild_id]
                 except KeyError:
                     continue
-                p.stage_title_event = bool(inter.text_values["status_voice_value"])
-                p.stage_title_template = inter.text_values["status_voice_value"]
+                p.stage_title_event = bool(values["status_voice_value"])
+                p.stage_title_template = values["status_voice_value"]
                 p.start_time = disnake.utils.utcnow()
                 p.set_command_log(
-                    text=f"{inter.author.mention} " + ("ativou" if inter.text_values["status_voice_value"] else "desativou") + "o status automático",
+                    text=f"{inter.author.mention} " + ("ativou" if values["status_voice_value"] else "desativou") + " o status automático",
                     emoji="📢",
                 )
                 p.update = True
@@ -2048,18 +2236,35 @@ class SetStageTitle(disnake.ui.View):
                 await p.process_save_queue()
                 await asyncio.sleep(3)
 
-            await inter.edit_original_message("**Status permanente foi " + ("salvo" if inter.text_values["status_voice_value"] else "desativado") + " com sucesso!**" )
+            await inter.edit_original_message("**Status permanente foi " + ("salvo" if values["status_voice_value"] else "desativado") + " com sucesso!**" )
 
-        elif inter.data.custom_id == "status_voice_channel_temp":
+        elif inter.data.custom_id.startswith("status_voice_channel_temp"):
 
-            try:
-                player: LavalinkPlayer = self.bot.music.players[inter.guild_id]
-            except KeyError:
+            player: Optional[LavalinkPlayer] = None
+
+            for bot in self.bot.pool.get_guild_bots(inter.guild_id):
+                try:
+                    player = bot.music.players[inter.guild_id]
+                except KeyError:
+                    continue
+
+                if inter.author.id not in player.guild.me.voice.channel.voice_states:
+                    continue
+
+                break
+
+            if not player:
                 await inter.send("**Não estou tocando música em um canal de voz/palco...**", ephemeral=True)
                 return
 
-            player.stage_title_event = bool(inter.text_values["status_voice_value"])
-            player.stage_title_template = inter.text_values["status_voice_value"]
+            inter.author = player.guild.get_member(inter.author.id)
+
+            if not inter.author.guild_permissions.manage_guild:
+                await inter.send("Você não possui a permissão de gerenciar servidor para alterar o status do canal de voz", ephemeral=True)
+                return
+
+            player.stage_title_event = bool(values["status_voice_value"])
+            player.stage_title_template = values["status_voice_value"]
             player.start_time = disnake.utils.utcnow()
 
             await inter.response.defer(ephemeral=True)
@@ -2072,13 +2277,13 @@ class SetStageTitle(disnake.ui.View):
             await player.process_save_queue()
 
             player.set_command_log(
-                text=f"{inter.author.mention} " + ("ativou" if inter.text_values["status_voice_value"] else "desativou") + " o status automático",
+                text=f"{inter.author.mention} " + ("ativou" if values["status_voice_value"] else "desativou") + " o status automático",
                 emoji="📢",
             )
 
             player.update = True
 
-            await inter.edit_original_message("**Status definido com sucesso!**" if inter.text_values["status_voice_value"] else "**Status desativado com sucesso!**")
+            await inter.edit_original_message("**Status definido com sucesso!**" if values["status_voice_value"] else "**Status desativado com sucesso!**")
 
         else:
             await inter.send(f"Não implementado: {inter.data.custom_id}", ephemeral=True)
@@ -2919,7 +3124,7 @@ class SkinEditorMenu(disnake.ui.View):
                 player.process_hint()
 
             try:
-                cmd = f"</change_skin:" + str(self.bot.pool.controller_bot.get_global_command_named("change_skin",
+                cmd = f"</change_skin:" + str(self.bot.get_global_command_named("change_skin",
                                                                                              cmd_type=disnake.ApplicationCommandType.chat_input).id) + ">"
             except AttributeError:
                 cmd = "/change_skin"

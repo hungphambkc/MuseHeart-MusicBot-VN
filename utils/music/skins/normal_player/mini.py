@@ -35,7 +35,7 @@ class MiniSkin:
 
         embed = disnake.Embed(
             color=embed_color,
-            description=f"[`{player.current.single_title}`]({player.current.uri or player.current.search_uri})"
+            description=f"-# [`{player.current.single_title}`]({player.current.uri or player.current.search_uri})"
         )
         embed_queue = None
         queue_size = len(player.queue)
@@ -164,6 +164,11 @@ class MiniSkin:
                         description="Sistema de adição de música automática quando a fila estiver vazia."
                     ),
                     disnake.SelectOption(
+                        label="Last.fm scrobble", emoji="<:Lastfm:1278883704097341541>",
+                        value=PlayerControls.lastfm_scrobble,
+                        description="Ativar/desativar o scrobble/registro de músicas na sua conta do last.fm."
+                    ),
+                    disnake.SelectOption(
                         label= ("Desativar" if player.restrict_mode else "Ativar") + " o modo restrito", emoji="🔐",
                         value=PlayerControls.restrict_mode,
                         description="Apenas DJ's/Staff's podem usar comandos restritos."
@@ -192,12 +197,11 @@ class MiniSkin:
             )
 
         if isinstance(player.last_channel, disnake.VoiceChannel):
-            txt = "Desativar" if player.stage_title_event else "Ativar"
             data["components"][5].options.append(
                 disnake.SelectOption(
-                    label= f"{txt} status automático", emoji="📢",
-                    value=PlayerControls.stage_announce,
-                    description=f"{txt} o status automático do canal de voz."
+                    label="Status automático", emoji="📢",
+                    value=PlayerControls.set_voice_status,
+                    description="Configurar o status automático do canal de voz."
                 )
             )
 

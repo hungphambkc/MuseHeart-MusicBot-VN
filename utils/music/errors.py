@@ -21,11 +21,12 @@ class ArgumentParsingError(commands.CommandError):
 
 class GenericError(commands.CheckFailure):
 
-    def __init__(self, text: str, *, self_delete: int = None, delete_original: Optional[int] = None, components: list = None):
+    def __init__(self, text: str, *, self_delete: int = None, delete_original: Optional[int] = None, components: list = None, error: str = None):
         self.text = text
         self.self_delete = self_delete
         self.delete_original = delete_original
         self.components = components
+        self.error = error
 
 
 class EmptyFavIntegration(commands.CheckFailure):
@@ -65,6 +66,10 @@ class NotRequester(commands.CheckFailure):
     pass
 
 
+class YoutubeSourceDisabled(commands.CheckFailure):
+    pass
+
+
 def parse_error(
         ctx: Union[disnake.ApplicationCommandInteraction, commands.Context, disnake.MessageInteraction],
         error: Exception
@@ -77,6 +82,8 @@ def parse_error(
     mention_author = False
 
     components = []
+
+    send_error = False
 
     error = getattr(error, 'original', error)
 
@@ -101,6 +108,8 @@ def parse_error(
     elif isinstance(error, GenericError):
         error_txt = error.text
         components = error.components
+        if error.text:
+            send_error = True
 
     elif isinstance(error, NotRequester):
         error_txt = "**Você deve ter pedido a música atual ou estar na lista de DJ ou ter a permissão de " \
@@ -163,10 +172,8 @@ def parse_error(
         mention_author = True
 
         components = [
-            disnake.ui.Button(label="Abrir o gerenciador de favoritos",
+            disnake.ui.Button(label="Abrir o gerenciador de favoritos e integrações",
                               custom_id="musicplayer_fav_manager", emoji="⭐"),
-            disnake.ui.Button(label="Abrir o gerenciador de integrações",
-                              custom_id="musicplayer_integration_manager", emoji="💠")
         ]
 
     elif isinstance(error, commands.MaxConcurrencyReached):
@@ -186,6 +193,10 @@ def parse_error(
 
     elif isinstance(error, TrackNotFound):
         error_txt = "**Não houve resultados para sua busca...**"
+
+    elif isinstance(error, YoutubeSourceDisabled):
+        error_txt = "O suporte a links/buscas do youtube está desativado devido a medidas reforçadas do próprio youtube " \
+                     "que impede o funcionamento nativo de links do yt. Caso queira conferir a postagem do youtube sobre isso você pode [clicar aqui](<https://support.google.com/youtube/thread/269521462/enforcement-on-third-party-apps?hl=en>)."
 
     if isinstance(error, ServerSelectionTimeoutError) and os.environ.get("REPL_SLUG"):
         error_txt = "Foi detectado um erro de dns na repl.it que me impede de conectar com minha database " \
@@ -207,10 +218,12 @@ def parse_error(
                 "who has blocked it in your country on copyright grounds" in wave_error.lower():
             error_txt = "**O conteúdo deste link não está disponível na região no qual estou funcionando...**"
 
+    full_error_txt = ""
+
     if not error_txt:
         full_error_txt = "".join(traceback.format_exception(type(error), error, error.__traceback__))
         print(full_error_txt)
-    else:
-        full_error_txt = ""
+    elif send_error:
+        full_error_txt = "".join(traceback.format_exception(type(error), error, error.__traceback__))
 
     return error_txt, full_error_txt, kill_process, components, mention_author

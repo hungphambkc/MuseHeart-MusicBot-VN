@@ -31,18 +31,24 @@ def download_file(url, filename):
         for data in r.iter_content(chunk_size=2500*1024):
             f.write(data)
             bytes_downloaded += len(data)
-            current_progress = int((bytes_downloaded / total_size) * 100)
+            try:
+                current_progress = int((bytes_downloaded / total_size) * 100)
+            except ZeroDivisionError:
+                current_progress = 0
 
             if current_progress != previows_progress:
                 previows_progress = current_progress
                 time_elapsed = time.time() - start_time
-                download_speed = bytes_downloaded / time_elapsed / 1024
-                if download_speed >= 1:
-                    download_speed = (download_speed or 1) / 1024
-                    speed_txt = "MB/s"
-                else:
-                    speed_txt = "KB/s"
-                print(f"Download do arquivo {filename} {current_progress}% concluído ({download_speed:.2f} {speed_txt} / {total_txt})")
+                try:
+                    download_speed = bytes_downloaded / time_elapsed / 1024
+                    if download_speed >= 1:
+                        download_speed = (download_speed or 1) / 1024
+                        speed_txt = "MB/s"
+                    else:
+                        speed_txt = "KB/s"
+                    print(f"Download do arquivo {filename} {current_progress}% concluído ({download_speed:.2f} {speed_txt} / {total_txt})")
+                except:
+                    print(f"Download do arquivo {filename} {current_progress}% concluído")
 
     r.close()
 
@@ -67,7 +73,7 @@ def run_lavalink(
         lavalink_ram_limit: int = 100,
         lavalink_additional_sleep: int = 0,
         lavalink_cpu_cores: int = 1,
-        use_jabba: bool = True
+        use_jabba: bool = False
 ):
     arch, osname = platform.architecture()
     jdk_platform = f"{platform.system()}-{arch}-{osname}"
@@ -93,7 +99,7 @@ def run_lavalink(
                 dirs.extend(
                     [
                         os.path.realpath("./.jabba/jdk/zulu@1.17.0-0/bin/java"),
-                        os.path.expanduser("~/.jabba/jdk/zulu@1.17.0-0/bin/java")
+                        os.path.expanduser("./.jabba/jdk/zulu@1.17.0-0/bin/java")
                     ]
                 )
                 try:
@@ -123,9 +129,9 @@ def run_lavalink(
                     pass
 
                 if platform.architecture()[0] != "64bit":
-                    jdk_url = "https://download.bell-sw.com/java/17.0.9+11/bellsoft-jdk17.0.9+11-windows-i586.zip"
+                    jdk_url = "https://download.bell-sw.com/java/21.0.3+12/bellsoft-jdk21.0.3+12-windows-i586-lite.zip"
                 else:
-                    jdk_url = "https://download.bell-sw.com/java/17.0.9+11/bellsoft-jdk17.0.9+11-windows-amd64.zip"
+                    jdk_url = "https://download.bell-sw.com/java/21.0.3+12/bellsoft-jdk21.0.3+12-windows-amd64-lite.zip"
 
                 jdk_filename = "java.zip"
 
@@ -148,16 +154,16 @@ def run_lavalink(
             elif use_jabba:
 
                 try:
-                    shutil.rmtree("~/.jabba/jdk/zulu@1.17.0-0")
+                    shutil.rmtree("./.jabba/jdk/zulu@1.17.0-0")
                 except:
                     pass
 
-                download_file("https://github.com/shyiko/jabba/raw/master/install.sh", "install_jabba.sh")
-                subprocess.call("bash install_jabba.sh".split())
-                subprocess.call("~/.jabba/bin/jabba install zulu@>=1.17.0-0", shell=True)
+                download_file("https://raw.githubusercontent.com/shyiko/jabba/master/install.sh", "install_jabba.sh")
+                subprocess.call("bash install_jabba.sh", shell=True)
+                subprocess.call("./.jabba/bin/jabba install zulu@1.17.0-0", shell=True)
                 os.remove("install_jabba.sh")
 
-                java_cmd = os.path.expanduser("~/.jabba/jdk/zulu@1.17.0-0/bin/java")
+                java_cmd = os.path.expanduser("./.jabba/jdk/zulu@1.17.0-0/bin/java")
 
             else:
                 if not os.path.isdir(f"./.java/{jdk_platform}"):
@@ -168,9 +174,9 @@ def run_lavalink(
                         pass
 
                     if platform.architecture()[0] != "64bit":
-                        jdk_url = "https://download.bell-sw.com/java/17.0.9+11/bellsoft-jdk17.0.9+11-linux-i586.tar.gz"
+                        jdk_url = "https://download.bell-sw.com/java/21.0.3+12/bellsoft-jdk21.0.3+12-linux-i586-lite.tar.gz"
                     else:
-                        jdk_url = "https://download.bell-sw.com/java/17.0.9+11/bellsoft-jdk17.0.9+11-linux-amd64.tar.gz"
+                        jdk_url = "https://download.bell-sw.com/java/21.0.3+12/bellsoft-jdk21.0.3+12-linux-amd64-lite.tar.gz"
 
                     java_cmd = os.path.realpath(f"./.java/{jdk_platform}/bin/java")
 
@@ -227,13 +233,13 @@ def run_lavalink(
 
     java_cmd += " -jar Lavalink.jar"
 
-    print(f"Iniciando o servidor Lavalink (dependendo da hospedagem o lavalink pode demorar iniciar, "
-          f"o que pode ocorrer falhas em algumas tentativas de conexão até ele iniciar totalmente).\n{'-' * 30}")
+    print("🌋 - Iniciando o servidor Lavalink (dependendo da hospedagem o lavalink pode demorar iniciar, "
+          "o que pode ocorrer falhas em algumas tentativas de conexão até ele iniciar totalmente).")
 
     lavalink_process = subprocess.Popen(java_cmd.split(), stdout=subprocess.DEVNULL)
 
     if lavalink_additional_sleep:
-        print(f"Aguarde {lavalink_additional_sleep} segundos...\n{'-' * 30}")
+        print(f"🕙 - Aguarde {lavalink_additional_sleep} segundos...")
         time.sleep(lavalink_additional_sleep)
 
     return lavalink_process

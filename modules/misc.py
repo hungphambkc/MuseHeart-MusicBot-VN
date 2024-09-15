@@ -226,12 +226,6 @@ class Misc(commands.Cog):
     @commands.Cog.listener("on_guild_join")
     async def guild_add(self, guild: disnake.Guild):
 
-        if str(self.bot.user.id) in self.bot.config["INTERACTION_BOTS_CONTROLLER"]:
-            await guild.leave()
-            return
-
-        interaction_invite = ""
-
         bots_in_guild = []
         bots_outside_guild = []
 
@@ -249,9 +243,6 @@ class Misc(commands.Cog):
                 bots_outside_guild.append(bot)
 
         components = [disnake.ui.Button(custom_id="bot_invite", label="Precisa de mais bots de música? Clique aqui.")] if [b for b in self.bot.pool.bots if b.appinfo and b.appinfo.bot_public] else []
-
-        if self.bot.pool.controller_bot != self.bot:
-            interaction_invite = f"[`{disnake.utils.escape_markdown(str(self.bot.pool.controller_bot.user.name))}`]({disnake.utils.oauth_url(self.bot.pool.controller_bot.user.id)})"
 
         if cmd:=self.bot.get_command("setup"):
             cmd_text = f"Se desejar, use o comando **/{cmd.name}** para criar um canal dedicado pra pedir " \
@@ -298,28 +289,13 @@ class Misc(commands.Cog):
                             ).set_image(url=image)
                         )
 
-                        if interaction_invite:
-                            embeds.append(
-                                disnake.Embed(
-                                    color=color,
-                                    description=f"**Observação importante:** Meus comandos de barra funcionam através "
-                                                f"da seguinte aplicação: {interaction_invite}\n\n"
-                                                f"Caso os comandos da aplicação acima não sejam exibidos ao digitar "
-                                                f"barra (**/**) em um canal do servidor **{guild.name}** você terá que "
-                                                f"clicar no nome acima para integrar os comandos de barra no servidor "
-                                                f"**{guild.name}**.\n`Nota: Caso os comandos ainda não apareçam após "
-                                                f"integrar os comandos, talvez seu servidor tenha atingido o limite de "
-                                                f"bots com comandos de barra registrados.`"
-                                ).set_image(url=image)
-                            )
-                        else:
-                            embeds.append(
-                                disnake.Embed(
-                                    color=color,
-                                    description=f"Para ver todos os meus comandos use barra (**/**) no servidor " \
-                                                 f"**{guild.name}**"
-                                ).set_image(url=image)
-                            )
+                        embeds.append(
+                            disnake.Embed(
+                                color=color,
+                                description=f"Para ver todos os meus comandos use barra (**/**) no servidor " \
+                                             f"**{guild.name}**"
+                            ).set_image(url=image)
+                        )
 
                         if prefix:
                             prefix_msg = f"Meu prefixo no servidor **{guild.name}** é: **{prefix}**"
@@ -389,29 +365,14 @@ class Misc(commands.Cog):
             if not channel:
                 return
 
-        embeds = []
-
-        if interaction_invite:
-
-            embeds.append(
-                disnake.Embed(
-                    color=color,
-                    description=f"Olá! Para ver todos os meus comandos digite barra (**/**) e confira "
-                                f"os comandos da seguinte aplicação: {interaction_invite}\n\n"
-                                f"Caso os comandos da aplicação acima não sejam exibidos ao digitar barra (**/**) você "
-                                f"terá que clicar no nome acima para integrar os comandos de barra no seu servidor.\n"
-                                f"`Nota: Caso os comandos ainda não apareçam após integrar os comandos, talvez seu "
-                                f"servidor tenha atingido o limite de bots com comandos de barra registrados.`"
-
-                ).set_image(url=image)
-            )
-
-        else:
-            embeds.append(
-                disnake.Embed(
-                    color=color, description="Olá! Para ver todos os meus comandos use barra (**/**)"
-                ).set_image(url=image)
-            )
+        embeds = [
+            disnake.Embed(
+                color=color, description="Olá! Para ver todos os meus comandos use barra (**/**)\n"
+                                         "`Nota: Caso os comandos estejam aparecendo no seu servidor,"
+                                         "talvez o mesmo tenha atingido o limite de bots com comandos de barra "
+                                         "registrados (caso tenha mais de 50 integrações/apps no seu servidor).`"
+            ).set_image(url=image)
+        ]
 
         if prefix:
             prefix_msg = f"Meu prefixo no servidor é: **{prefix}**"
@@ -573,6 +534,9 @@ class Misc(commands.Cog):
 
             for n in b.music.nodes.values():
 
+                if n.version == 0:
+                    continue
+
                 identifier = f"{n.identifier} (v{n.version})"
 
                 if not identifier in node_data:
@@ -669,7 +633,7 @@ class Misc(commands.Cog):
             embed.description += f"> 💤 **⠂Player{(s:='s'[:inactive_players_other_bots^1])} inativo{s}:** `{inactive_players_other_bots:,}`\n"
 
         if listeners:
-            embed.description += f"> 🎧 **⠂Ouvinte{'s'[:(lcount:=len(listeners))^1]} atua{'is'[:inactive_players_other_bots^1] or 'l'}:** `{lcount:,}`\n"
+            embed.description += f"> 🎧 **⠂Ouvinte{'s'[:(lcount:=len(listeners))^1]} atua{'is'[:lcount^1] or 'l'}:** `{lcount:,}`\n"
 
         if bot.pool.commit:
             embed.description += f"> 📥 **⠂Commit atual:** [`{bot.pool.commit[:7]}`]({bot.pool.remote_git_url}/commit/{bot.pool.commit})\n"
@@ -682,22 +646,14 @@ class Misc(commands.Cog):
 
         if not bot.config["INTERACTION_COMMAND_ONLY"]:
 
-            try:
-                guild_data = inter.global_guild_data
-            except AttributeError:
-                guild_data = await bot.get_global_data(inter.guild_id, db_name=DBModel.guilds)
-                inter.global_guild_data = guild_data
+            guild_data = await bot.get_global_data(inter.guild_id, db_name=DBModel.guilds)
 
             if guild_data["prefix"]:
                 embed.description += f"> ⌨️ **⠂Prefixo do servidor:** `{disnake.utils.escape_markdown(guild_data['prefix'], as_needed=True)}`\n"
             else:
                 embed.description += f"> ⌨️ **⠂Prefixo padrão:** `{disnake.utils.escape_markdown(bot.default_prefix, as_needed=True)}`\n"
 
-            try:
-                user_data = inter.global_user_data
-            except AttributeError:
-                user_data = await bot.get_global_data(inter.author.id, db_name=DBModel.users)
-                inter.global_user_data = user_data
+            user_data = await bot.get_global_data(inter.author.id, db_name=DBModel.users)
 
             if user_data["custom_prefix"]:
                 embed.description += f"> ⌨️ **⠂Seu prefixo de usuário:** `{disnake.utils.escape_markdown(user_data['custom_prefix'], as_needed=True)}`\n"
@@ -765,7 +721,7 @@ class Misc(commands.Cog):
             except:
                 continue
 
-            kwargs = {"redirect_uri": self.bot.config['INVITE_REDIRECT_URL']} if self.bot.config['INVITE_REDIRECT_URL'] else {}
+            kwargs = {}
 
             invite = f"[`{disnake.utils.escape_markdown(str(bot.user.name))}`]({disnake.utils.oauth_url(bot.user.id, permissions=disnake.Permissions(bot.config['INVITE_PERMISSIONS']), scopes=('bot',), **kwargs)})"
 
@@ -803,12 +759,6 @@ class Misc(commands.Cog):
             )
             return
 
-        controller_bot = self.bot.pool.controller_bot
-
-        if (len(bots_in_guild) + len(bots_invites)) > 1 and f"client_id={controller_bot.user.id}" not in txt:
-            invite = f"[`{disnake.utils.escape_markdown(str(controller_bot.user.name))}`](https://discord.com/oauth2/authorize?client_id={controller_bot.user.id})"
-            txt = f"## Registrar/Integrar os comandos de barra:\n{invite}\n\n" + txt
-
         color = self.bot.get_color(inter.guild.me if inter.guild else guild.me if guild else None)
 
         embeds = [
@@ -839,29 +789,82 @@ class Misc(commands.Cog):
     @commands.user_command(name="Avatar", dm_permission=False)
     async def avatar(self, inter: disnake.UserCommandInteraction):
 
+        user = inter.target
+
+        guild = None
+
+        bot = self.bot
+
+        for b in self.bot.pool.get_guild_bots(inter.guild_id):
+            if (guild:=b.get_guild(inter.guild_id)):
+                bot = b
+                break
+
+        if not guild:
+            user = await bot.fetch_user(inter.author.id)
+
+            user_avatar_url = inter.author.display_avatar.replace(static_format="png", size=512).url
+
+            if user_banner_url:=user.banner:
+                user_banner_url = inter.author.banner.replace(static_format="png", size=4096).url
+
+            guild_avatar_url = None
+            guild_banner_url = None
+
+        else:
+            async with self.bot.session.get(f"https://discord.com/api/v10/guilds/{inter.guild_id}/members/{user.id}",
+                                            headers={"Authorization": f"Bot {bot.http.token}"}) as r:
+                data = await r.json()
+
+            user_avatar_url = inter.author.display_avatar.replace(static_format="png", size=512).url
+
+            if user_banner_url := data['user'].get('banner'):
+                user_banner_url = f"https://cdn.discordapp.com/banners/{user.id}/{user_banner_url}." + (
+                    "gif" if user_banner_url.startswith('a_') else "png") + "?size=4096"
+
+            if guild_avatar_url := data.get("avatar"):
+                guild_avatar_url = f"https://cdn.discordapp.com/guilds/{inter.guild_id}/users/{user.id}/avatars/{guild_avatar_url}." + (
+                    "gif" if guild_avatar_url.startswith('a_') else "png") + "?size=512"
+
+            if guild_banner_url := data.get("banner"):
+                guild_banner_url = f"https://cdn.discordapp.com/guilds/{inter.guild_id}/users/{user.id}/banners/{guild_banner_url}." + (
+                    "gif" if guild_banner_url.startswith('a_') else "png") + "?size=4096"
+
         embeds = []
 
-        assets = {}
+        requester = inter.author.display_avatar.with_static_format("png").url
 
-        if self.bot.intents.members:
-            user = (await self.bot.fetch_user(inter.target.id) if not inter.target.bot else self.bot.get_user(inter.target.id))
-        else:
-            user = inter.target
+        color = self.bot.get_color()
 
-        try:
-            if inter.target.guild_avatar:
-                assets["Avatar (Server)"] = inter.target.guild_avatar.with_static_format("png")
-        except AttributeError:
-            pass
-        assets["Avatar (User)"] = user.display_avatar.with_static_format("png")
-        if user.banner:
-            assets["Banner"] = user.banner.with_static_format("png")
+        if guild_avatar_url:
+            embeds.append(
+                disnake.Embed(
+                    description=f"{user.mention} **[avatar (server)]({guild_avatar_url})**",
+                    color=color).set_image(url=guild_avatar_url)
+            )
 
-        for name, asset in assets.items():
-            embed = disnake.Embed(description=f"{inter.target.mention} **[{name}]({asset.with_size(2048).url})**",
-                                  color=self.bot.get_color(inter.guild.me if inter.guild else None))
-            embed.set_image(asset.with_size(256).url)
-            embeds.append(embed)
+        if guild_banner_url:
+            embeds.append(
+                disnake.Embed(
+                    description=f"{user.mention} **[banner (server)]({guild_banner_url})**",
+                    color=color).set_image(url=guild_banner_url)
+            )
+
+        embeds.append(
+            disnake.Embed(
+                description=f"{user.mention} **[avatar (user)]({user_avatar_url})**",
+                color=color).set_image(url=user_avatar_url)
+        )
+
+        if user_banner_url:
+            embeds.append(
+                disnake.Embed(
+                    description=f"{user.mention} **[banner (user)]({user_banner_url})**",
+                    color=color).set_image(url=user_banner_url)
+            )
+
+        if inter.user.id != user.id:
+            embeds[-1].set_footer(text=f"Solicitado por: {inter.author}", icon_url=requester)
 
         await inter.send(embeds=embeds, ephemeral=True)
 
@@ -928,10 +931,7 @@ class GuildLog(commands.Cog):
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: disnake.Guild):
 
-        if str(self.bot.user.id) in self.bot.config["INTERACTION_BOTS_CONTROLLER"]:
-            return
-
-        print(f"Removido do servidor: {guild.name} - [{guild.id}]")
+        print(f"😭 - Bot {self.bot.user.name} foi removido(a) do servidor: {guild.name} - [{guild.id}]")
 
         try:
             await self.bot.music.players[guild.id].destroy()
@@ -953,10 +953,7 @@ class GuildLog(commands.Cog):
     @commands.Cog.listener()
     async def on_guild_join(self, guild: disnake.Guild):
 
-        if str(self.bot.user.id) in self.bot.config["INTERACTION_BOTS_CONTROLLER"]:
-            return
-
-        print(f"{self.bot.user.name} - Adicionado(a) no servidor: {guild.name} - [{guild.id}]")
+        print(f"🎉 - Bot {self.bot.user.name} foi adicionado(a) no servidor: {guild.name} - [{guild.id}]")
 
         try:
             guild_data = await self.bot.get_data(guild.id, db_name=DBModel.guilds)

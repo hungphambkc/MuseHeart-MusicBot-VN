@@ -71,10 +71,6 @@ class Owner(commands.Cog):
     os_quote = "\"" if os.name == "nt" else "'"
     git_format = f"--pretty=format:{os_quote}%H*****%h*****%s*****%ct{os_quote}"
 
-    extra_files = [
-        "./playlist_cache.json",
-    ]
-
     additional_files = [
         "./lavalink.ini",
         "./application.yml",
@@ -171,6 +167,9 @@ class Owner(commands.Cog):
 
             if args.yml and os.path.isfile("./application.yml"):
                 os.remove("./application.yml")
+                txt = "Os arquivos Lavalink.jar e application.yml serão atualizados"
+            else:
+                txt = "O arquivo Lavalink.jar será atualizado"
 
             await self.bot.pool.start_lavalink()
 
@@ -195,8 +194,7 @@ class Owner(commands.Cog):
 
         await ctx.send(
             embed=disnake.Embed(
-                description="**O arquivo Lavalink.jar será atualizado "
-                            "e o servidor lavalink LOCAL será reiniciado.**",
+                description=f"**{txt} e o servidor lavalink LOCAL será reiniciado.**",
                 color=self.bot.get_color(ctx.guild.me)
             )
         )
@@ -217,9 +215,8 @@ class Owner(commands.Cog):
             return txt
 
     @commands.is_owner()
-    @panel_command(aliases=["rd", "recarregar"], description="Recarregar os módulos.", emoji="🔄",
-                   alt_name="Carregar/Recarregar módulos.")
-    async def reload(self, ctx: Union[CustomContext, disnake.MessageInteraction], *modules):
+    @panel_command(aliases=["rds", "recarregarskins"], description="Recarregar skins.", emoji="🎨")
+    async def reloadskins(self, ctx: Union[CustomContext, disnake.MessageInteraction]):
 
         for m in list(sys.modules):
             if not m.startswith("utils.music.skins."):
@@ -229,21 +226,31 @@ class Owner(commands.Cog):
             except:
                 continue
 
-        modules = [f"{m}.py" for m in modules]
+        self.bot.pool.load_skins()
 
-        data = self.bot.load_modules(modules)
-        self.bot.load_skins()
+        txt = "**As skins foram recarregadas com sucesso!**"
 
-        await self.bot.sync_app_commands(force=self.bot == self.bot.pool.controller_bot)
+        if isinstance(ctx, CustomContext):
+            embed = disnake.Embed(colour=self.bot.get_color(ctx.me), description=txt)
+            await ctx.send(embed=embed, view=self.owner_view)
+        else:
+            return txt
 
-        for bot in set(self.bot.pool.get_all_bots() + [self.bot.pool.controller_bot]):
+    @commands.is_owner()
+    @panel_command(aliases=["rd", "recarregar"], description="Recarregar módulos.", emoji="🔄",
+                   alt_name="Carregar/Recarregar os módulos.")
+    async def reload(self, ctx: Union[CustomContext, disnake.MessageInteraction], *modules):
 
-            if bot.user.id != self.bot.user.id:
-                bot.load_skins()
-                bot.load_modules(modules)
-                await bot.sync_app_commands(force=bot == self.bot.pool.controller_bot)
+        modules = [f"{m.lower()}.py" for m in modules]
 
-        self.bot.sync_command_cooldowns(force=True)
+        data = {}
+
+        for bot in (allbots:=set(self.bot.pool.get_all_bots())):
+            data = bot.load_modules(modules)
+            bot.sync_command_cooldowns(force=True)
+
+        for bot in allbots:
+            await bot.sync_app_commands(force=True)
 
         txt = ""
 
@@ -252,6 +259,9 @@ class Owner(commands.Cog):
 
         if data["reloaded"]:
             txt += f'**Módulos recarregados:** ```ansi\n[0;32m{" [0;37m| [0;32m".join(data["reloaded"])}```\n'
+
+        if data["failed"]:
+            txt += f'**Módulos que falharam:** ```ansi\n[0;31m{" [0;37m| [0;31m".join(data["failed"])}```\n'
 
         if not txt:
             txt = "**Nenhum módulo encontrado...**"
@@ -341,7 +351,7 @@ class Owner(commands.Cog):
 
         git_log += format_git_log(data)
 
-        self.bot.pool.commit = commit
+        self.bot.pool.commit = commit.split("...")[-1]
 
         text = "`Será necessário me reiniciar após as alterações.`"
 
@@ -546,11 +556,7 @@ class Owner(commands.Cog):
         if not prefix or len(prefix) > 5:
             raise GenericError("**O prefixo não pode conter espaços ou ter acima de 5 caracteres.**")
 
-        try:
-            guild_data = ctx.global_guild_data
-        except AttributeError:
-            guild_data = await self.bot.get_global_data(ctx.guild.id, db_name=DBModel.guilds)
-            ctx.global_guild_data = guild_data
+        guild_data = await self.bot.get_global_data(ctx.guild.id, db_name=DBModel.guilds)
 
         self.bot.pool.guild_prefix_cache[ctx.guild.id] = prefix
         guild_data["prefix"] = prefix
@@ -573,11 +579,7 @@ class Owner(commands.Cog):
     )
     async def resetprefix(self, ctx: CustomContext):
 
-        try:
-            guild_data = ctx.global_guild_data
-        except AttributeError:
-            guild_data = await self.bot.get_global_data(ctx.guild.id, db_name=DBModel.guilds)
-            ctx.global_guild_data = guild_data
+        guild_data = await self.bot.get_global_data(ctx.guild.id, db_name=DBModel.guilds)
 
         if not guild_data["prefix"]:
             raise GenericError("**Nao há prefixo configurado no servidor.**")
@@ -609,11 +611,7 @@ class Owner(commands.Cog):
         if not prefix or len(prefix) > 5:
             raise GenericError("**O prefixo não pode conter espaços ou ter acima de 5 caracteres.**")
 
-        try:
-            user_data = ctx.global_user_data
-        except AttributeError:
-            user_data = await self.bot.get_global_data(ctx.author.id, db_name=DBModel.users)
-            ctx.global_user_data = user_data
+        user_data = await self.bot.get_global_data(ctx.author.id, db_name=DBModel.users)
 
         user_data["custom_prefix"] = prefix
         self.bot.pool.user_prefix_cache[ctx.author.id] = prefix
@@ -633,11 +631,7 @@ class Owner(commands.Cog):
     @commands.command(description="Remover seu prefixo de usuário")
     async def resetuserprefix(self, ctx: CustomContext):
 
-        try:
-            user_data = ctx.global_user_data
-        except AttributeError:
-            user_data = await self.bot.get_global_data(ctx.author.id, db_name=DBModel.users)
-            ctx.global_user_data = user_data
+        user_data = await self.bot.get_global_data(ctx.author.id, db_name=DBModel.users)
 
         if not user_data["custom_prefix"]:
             raise GenericError("**Você não possui prefixo configurado.**")
@@ -757,10 +751,6 @@ class Owner(commands.Cog):
         for extra_dir in self.extra_dirs:
             for dir_path, dir_names, filenames in os.walk(extra_dir):
                 filelist += "\n" + "\n".join(os.path.join(dir_path, file) for file in filenames)
-
-        for file in self.extra_files:
-            if os.path.isfile(file):
-                filelist += "\n" + file
 
         for file in self.additional_files:
             if os.path.isfile(file):

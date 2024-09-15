@@ -21,19 +21,30 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 import asyncio
+import datetime
 import inspect
 import json
 import logging
 import os
-from typing import Any, Callable, Dict, Optional, Union
+import re
+import traceback
+from typing import Any, Callable, Dict, Optional, Union, List
 from urllib.parse import quote
 
+import Levenshtein
+
+from utils.music.youtube_trusted_session_generator import Browser
 from .backoff import ExponentialBackoff
 from .errors import *
 from .player import Player, Track, TrackPlaylist
 from .websocket import WebSocket
 
 __log__ = logging.getLogger(__name__)
+
+yt_playlist_regex = re.compile(r"[?&]list=([^&]+)")
+spotify_regex = re.compile("https://open.spotify.com?.+(album|playlist|artist)/([a-zA-Z0-9]+)")
+deezer_regex = re.compile(r"(https?://)?(www\.)?deezer\.com/(?P<countrycode>[a-zA-Z]{2}/)?(?P<type>album|playlist|artist|profile)/(?P<identifier>[0-9]+)")
+soundcloud_regex = re.compile(r"https://soundcloud\.com/([^/]+)/sets/([^/]+)")
 
 
 class Node:
@@ -91,7 +102,7 @@ class Node:
         self.user_agent = user_agent
         self.auto_reconnect = auto_reconnect
         self.resume_key = resume_key or str(os.urandom(8).hex())
-        self.version = version
+        self.version = 0
         self.session_id: Optional[int] = None
 
         self._dumps = dumps
@@ -109,10 +120,20 @@ class Node:
         self.restarting = False
 
         self.stats = None
-        self.info = None
-        self.plugins_dict: Optional[dict] = None
+        self.info = {"sourceManagers": []}
+        self.plugin_names: Optional[List] = None
+        self.max_retries = kwargs.pop("max_retries", 1)
+        self.only_use_native_search_providers = kwargs.pop("only_use_native_search_providers", False)
+        self.search_providers = []
+        self.partial_providers = []
+        self.original_providers = []
+        self.native_sources = kwargs.pop("native_sources", set())
 
         self._closing = False
+        self._is_connecting = False
+
+        self._retry_count = 0
+        self._retry_dt = datetime.datetime.utcnow()
 
     def __repr__(self):
         return f'{self.identifier} | {self.region} | (Shard: {self.shard_id})'
@@ -123,7 +144,12 @@ class Node:
         if self.version == 4 and not self.session_id:
             return False
 
-        return self._websocket.is_connected and self.available and not self._closing
+        try:
+            ws_connected = self._websocket.is_connected
+        except AttributeError:
+            ws_connected = False
+
+        return ws_connected and self.available and not self._closing and not self._is_connecting
 
     def close(self) -> None:
         """Close the node and make it unavailable."""
@@ -146,10 +172,59 @@ class Node:
         return {
             "Authorization": self.password,
             "User-Id": str(self.uid),
-            "Client-Name": f"Wavelink/custom",
+            "Client-Name": "Wavelink/custom",
         }
 
     async def connect(self, *args, **kwargs) -> None:
+
+        if self._is_connecting:
+            return
+
+        self._is_connecting = True
+
+        backoff = 9
+        retries = 1
+        exception = None
+        max_retries = int(self.max_retries)
+
+        if (info:=kwargs.get("info")):
+            self.version = info["check_version"]
+            self.info = info
+
+        else:
+            print(f"📶 - {self._client.bot.user} - Iniciando servidor de música: {self.identifier}")
+            while not self._client.bot.is_closed():
+                try:
+                    async with self._client.bot.session.get(f"{self.rest_uri}/v4/info", timeout=45, headers={'Authorization': self.password}) as r:
+                        if r.status == 200:
+                            self.info = await r.json()
+                            self.version = 4
+                        elif r.status != 404:
+                            raise Exception(f"❌ - {self._client.bot.user} - [{r.status}]: {await r.text()}"[:300])
+                        else:
+                            self.version = 3
+                            self.info["sourceManagers"] = ["youtube", "soundcloud", "http"]
+                        break
+                except Exception as e:
+                    if retries >= max_retries:
+                        self._is_connecting = False
+                        print(
+                            f"❌ - {self._client.bot.user} - Falha ao conectar no servidor [{self.identifier}]." +
+                            (f"\nCausa: {repr(exception)}" if exception else ""))
+                        return
+                    exception = e
+                    if self.identifier != "LOCAL":
+                        print(f'⚠️ - {self._client.bot.user} - Falha ao conectar no servidor [{self.identifier}], '
+                              f'nova tentativa [{retries}/{max_retries}] em {backoff} segundos.')
+                    backoff += 2
+                    retries += 1
+                    await asyncio.sleep(backoff)
+                    continue
+
+        if self.version < 4:
+            self.plugin_names = set()
+        else:
+            self.plugin_names = set([p["name"] for p in self.info["plugins"]])
 
         if not self._websocket:
 
@@ -166,13 +241,48 @@ class Node:
                                         **kwargs,
                                         )
 
-        await self._websocket._connect()
+        if not self._websocket.is_connected:
+            await self._websocket._connect()
+
+        self.available = True
+        self._is_connecting = False
 
         __log__.info(f'NODE | {self.identifier} connected:: {self.__repr__()}')
+
+    async def refresh_potoken(self, sandbox=True, browser_executable_path=None):
+
+        browser = Browser()
+
+        try:
+            ytid = self._client.bot.config["POTOKEN_YTID"]
+        except:
+            ytid = "jNQXAC9IVRw"
+
+        try:
+            await browser.start(sandbox=sandbox, browser_executable_path=browser_executable_path, ytid=ytid)
+        except Exception as e:
+            if not browser.data:
+                raise e
+            else:
+                traceback.print_exc()
+
+        async with self.session.post(url=f"{self.rest_uri}/youtube",
+            json={
+              "poToken": browser.data["po_token"],
+              "visitorData": browser.data["visitor_data"]
+            }, headers=self._websocket.headers
+        ) as r:
+            return f"{r.status}: {await r.text()}"
 
     async def update_player(self, guild_id: int, data: dict, replace: bool = False):
 
         if not self.session_id:
+            try:
+                player = self._client.bot.music.players[guild_id]
+                player._new_node_task = player.bot.loop.create_task(player._wait_for_new_node())
+                return
+            except:
+                pass
             raise MissingSessionID(self)
 
         no_replace: bool = not replace
@@ -197,7 +307,11 @@ class Node:
 
                 await asyncio.sleep(1.5)
 
-        raise WavelinkException(f"UpdatePlayer Failed: {resp.status}: {resp_data}")
+        if new_node := self._client.get_best_node(ignore_node=self):
+            await self.players[guild_id].change_node(new_node.identifier)
+            return
+
+        raise WavelinkException(f"{self.identifier}: UpdatePlayer Failed = {resp.status}: {resp_data}")
 
     async def get_tracks(self, query: str, *, retry_on_failure: bool = True, **kwargs) -> Union[list, TrackPlaylist, None]:
         """|coro|
@@ -222,88 +336,127 @@ class Node:
         """
         backoff = ExponentialBackoff(base=1)
 
-        base_uri = f'{self.rest_uri}/v4' if self.version == 4 else self.rest_uri
+        if yt_id:=(yt_playlist_regex.search(query)):
+            cache_key = f"youtube:{yt_id.group(1)}"
 
-        for attempt in range(2):
+        elif sp_match:=spotify_regex.match(query):
+            url_type, url_id = sp_match.groups()
+            cache_key = f"spotify:{url_type}:{url_id}"
 
-            async with self.session.get(f"{base_uri}/loadtracks?identifier={quote(query)}", headers={'Authorization': self.password}) as resp:
+        elif dz_match:=deezer_regex.match(query):
+            url_type, url_id = dz_match.groups()[-2:]
+            cache_key = f"deezer:{url_type}:{url_id}"
 
-                if resp.status != 200 and retry_on_failure:
-                    retry = backoff.delay()
+        elif sc_match:=soundcloud_regex.match(query):
+            user_name, playlist_id = sc_match.groups()
+            cache_key = f"soundcloud:{user_name}:{playlist_id}"
 
-                    __log__.info(f'REST | {self.identifier} | Status code ({resp.status}) while retrieving tracks. '
-                                 f'Attempt {attempt} of 5, retrying in {retry} seconds.')
+        else:
+            cache_key = None
 
-                    await asyncio.sleep(retry)
-                    continue
+        if not (data:=self._client.bot.pool.playlist_cache.get(cache_key)):
 
-                elif not resp.status == 200 and not retry_on_failure:
-                    __log__.info(f'REST | {self.identifier} | Status code ({resp.status}) while retrieving tracks. Not retrying.')
-                    return
+            base_uri = f'{self.rest_uri}/v4' if self.version == 4 else self.rest_uri
+
+            for attempt in range(2):
+
+                async with self.session.get(f"{base_uri}/loadtracks?identifier={quote(query)}", headers={'Authorization': self.password}) as resp:
+
+                    if resp.status != 200 and retry_on_failure:
+                        retry = backoff.delay()
+
+                        __log__.info(f'REST | {self.identifier} | Status code ({resp.status}) while retrieving tracks. '
+                                     f'Attempt {attempt} of 5, retrying in {retry} seconds.')
+
+                        await asyncio.sleep(retry)
+                        continue
+
+                    elif not resp.status == 200 and not retry_on_failure:
+                        __log__.info(f'REST | {self.identifier} | Status code ({resp.status}) while retrieving tracks. Not retrying.')
+                        return
+
+                    try:
+                        data = await resp.json()
+                    except Exception as e:
+                        raise WavelinkException(f"{self.identifier}: Failed to parse json result. | Error: {repr(e)}")
+
+                    if isinstance(data, list):
+                        return data
+
+                    break
+
+        loadtype = data.get('loadType')
+
+        try:
+            new_data = data.get('data')
+        except KeyError:
+            new_data = data
+
+        if not loadtype:
+            raise WavelinkException('There was an error while trying to load this track.')
+
+        if loadtype == 'NO_MATCHES':
+            __log__.info(f'REST | {self.identifier} | No tracks with query:: <{query}> found.')
+            return []
+
+        if loadtype in ('LOAD_FAILED', 'error'):
+
+            if self.version == 4:
+                new_data['exception'] = new_data
+
+            try:
+                error = f"There was an error of severity '{new_data['exception']['severity']}' while loading tracks.\n\n{new_data['exception']['message']}"
+            except KeyError:
+                error = f"There was an error of severity '{new_data['exception']['severity']}:\n{new_data['exception']['error']}"
+            e = TrackLoadError(error=error, node=self, data=new_data)
+            if not e.message:
+                e.message = new_data['exception']['error']
+            raise e
+
+        try:
+            tracks = new_data.get('tracks')
+        except AttributeError:
+            tracks = new_data
+
+        if loadtype == 'track':
+            tracks = [new_data]
+
+        if not tracks:
+            __log__.info(f'REST | {self.identifier} | No tracks with query:: <{query}> found.')
+            raise TrackNotFound(f"{self.identifier}: Track not found... | {query}")
+
+        encoded_name = "track" if self.version == 3 else "encoded"
+
+        if loadtype in ('PLAYLIST_LOADED', 'playlist'):
+
+            if cache_key:
+                self._client.bot.pool.playlist_cache[cache_key] = data
+
+            try:
+                new_data['playlistInfo'] = new_data.pop('info')
+            except KeyError:
+                pass
+
+            playlist_cls = kwargs.pop('playlist_cls', TrackPlaylist)
+            if query.startswith("https://music.youtube.com/"):
+                query = query.replace("https://www.youtube.com/", "https://music.youtube.com/")
 
                 try:
-                    data = await resp.json()
-                except Exception as e:
-                    raise WavelinkException(f"{self.identifier}: Failed to parse json result. | Error: {repr(e)}")
-
-                if isinstance(data, list):
-                    return data
-
-                loadtype = data.get('loadType')
-
-                try:
-                    data = data.pop('data')
+                    if new_data["playlistInfo"]["name"].startswith("Album - "):
+                        new_data["playlistInfo"]["name"] = new_data["playlistInfo"]["name"][8:]
+                        new_data["pluginInfo"]["type"] = "album"
+                        new_data["pluginInfo"]["albumName"] = new_data["playlistInfo"]["name"]
+                        new_data["pluginInfo"]["albumUrl"] = query
                 except KeyError:
                     pass
+            return playlist_cls(data=new_data, url=query, encoded_name=encoded_name, pluginInfo=new_data.pop("pluginInfo", {}),
+                                **kwargs)
 
-                if not loadtype:
-                    raise WavelinkException('There was an error while trying to load this track.')
+        track_cls = kwargs.pop('track_cls', Track)
 
-                if loadtype == 'NO_MATCHES':
-                    __log__.info(f'REST | {self.identifier} | No tracks with query:: <{query}> found.')
-                    return []
-
-                if loadtype in ('LOAD_FAILED', 'error'):
-
-                    if self.version == 4:
-                        data['exception'] = data
-
-                    try:
-                        error = f"There was an error of severity '{data['exception']['severity']}' while loading tracks.\n\n{data['exception']['message']}"
-                    except KeyError:
-                        error = f"There was an error of severity '{data['exception']['severity']}:\n{data['exception']['error']}"
-                    e = TrackLoadError(error=error, node=self, data=data)
-                    if not e.message:
-                        e.message = data['exception']['error']
-                    raise e
-
-                try:
-                    tracks = data.get('tracks')
-                except AttributeError:
-                    tracks = data
-
-                if loadtype == 'track':
-                    tracks = [data]
-
-                if not tracks:
-                    __log__.info(f'REST | {self.identifier} | No tracks with query:: <{query}> found.')
-                    raise TrackNotFound(f"{self.identifier}: Track not found... | {query}")
-
-                encoded_name = "track" if self.version == 3 else "encoded"
-
-                if loadtype in ('PLAYLIST_LOADED', 'playlist'):
-                    try:
-                        data['playlistInfo'] = data.pop('info')
-                    except KeyError:
-                        pass
-                    playlist_cls = kwargs.pop('playlist_cls', TrackPlaylist)
-                    return playlist_cls(data=data, url=query, encoded_name=encoded_name, pluginInfo=data.pop("pluginInfo", {}), **kwargs)
-
-                track_cls = kwargs.pop('track_cls', Track)
-
-                tracks = [track_cls(id_=track[encoded_name], info=track['info'], pluginInfo=track.get("pluginInfo", {}), **kwargs) for track in tracks]
-
-                return tracks
+        return [
+            track_cls(id_=track[encoded_name], info=track['info'], pluginInfo=track.get("pluginInfo", {}), **kwargs) for
+            track in tracks]
 
         __log__.warning(f'REST | {self.identifier} | Failure to load tracks after 5 attempts.')
 
@@ -345,10 +498,7 @@ class Node:
         if self.version < 4:
             return
 
-        if self.plugins_dict is None:
-            self.plugins_dict = {p.pop("name"): p for p in self.info["plugins"]}
-
-        return "lyrics" in self.plugins_dict
+        return "lyrics" in self.plugin_names
 
     async def fetch_ytm_lyrics(self, ytid: str):
 
@@ -356,9 +506,8 @@ class Node:
             raise Exception(f"Lyrics plugin not available on Node: {self.identifier}")
 
         async with self.session.get(f"{self.rest_uri}/v4/lyrics/{ytid}", headers=self.headers) as r:
-            if r.status != 200:
-                print(f"Lyrics fetching failed: {r.status} - {await r.text()}")
-                return
+            if r.status not in (200, 404):
+                r.raise_for_status()
             return await r.json()
 
     def get_player(self, guild_id: int) -> Optional[Player]:

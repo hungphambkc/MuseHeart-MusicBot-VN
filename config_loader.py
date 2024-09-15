@@ -27,11 +27,8 @@ DEFAULT_CONFIG = {
     "ADDITIONAL_BOT_IDS": "",
     "INVITE_PERMISSIONS": 332892794064,
     "ENABLE_LOGGER": False,
-    "INTERACTION_BOTS": "",
-    "INTERACTION_BOTS_CONTROLLER": "",
     "KILL_ON_429": True,
     "PREFIXED_POOL_TIMEOUT": 4,
-    "INVITE_REDIRECT_URL": "",
     "ENABLE_COMMANDS_COOLDOWN": True,
     "GIT_DIR": "./.git",
 
@@ -69,14 +66,18 @@ DEFAULT_CONFIG = {
     "PLAYER_SESSIONS_MONGODB": False,
     "QUEUE_MAX_ENTRIES": 0,
     "ENABLE_DEFER_TYPING": True,
-    "DEFAULT_SEARCH_PROVIDER": "ytsearch",
+    "VOICE_CHANNEL_LATENCY_RECONNECT": 200,
+    "PLAYLIST_CACHE_SIZE": 500,
+    "PLAYLIST_CACHE_TTL": 1800,
+    "USE_YTM_TRACKINFO_SCROBBLE": False,
+    "PARTIALTRACK_FIRST": False,
 
     ##############################################
     ### Sistema de música - Suporte ao spotify ###
     ##############################################
     "SPOTIFY_CLIENT_ID": '',
     "SPOTIFY_CLIENT_SECRET": '',
-    "PARTIALTRACK_SEARCH_PROVIDER": "ytsearch",
+    "SPOTIFY_PLAYLIST_EXTRA_PAGE_LIMIT": 0,
 
     ################################################
     ### Sistema de música - RPC (Rich Presence): ###
@@ -93,12 +94,22 @@ DEFAULT_CONFIG = {
     ##################################################
     "RUN_LOCAL_LAVALINK": False,
     "CONNECT_LOCAL_LAVALINK": True,
-    "USE_JABBA": True,
+    "USE_JABBA": False,
     "LAVALINK_ADDITIONAL_SLEEP": 0,
     "LAVALINK_INITIAL_RAM": 30,
     "LAVALINK_RAM_LIMIT": 120,
     "LAVALINK_CPU_CORES": 2,
     "LAVALINK_FILE_URL": "https://github.com/zRitsu/LL-binaries/releases/download/0.0.1/Lavalink.jar",
+    "SEARCH_PROVIDERS": "scsearch",
+    "PREFER_YOUTUBE_NATIVE_PLAYBACK": True,
+    "ONLY_USE_NATIVE_SEARCH_PROVIDERS": True,
+
+    ##################################################
+    ### Sistema de música - Integração com Last.fm ###
+    ##################################################
+
+    "LASTFM_KEY": "",
+    "LASTFM_SECRET": "",
 
     ##########################
     ##### Bot presences: #####
@@ -137,8 +148,11 @@ DEFAULT_CONFIG = {
     ##############
     ### Tests ####
     ##############
-    "USE_YTDL": False,
+    "USE_YTDL": True,
+    "FORCE_USE_DEEZER_CLIENT": False,
     "SILENT_PUBLICBOT_WARNING": False,
+    "DBCACHE_SIZE": 1000,
+    "DBCACHE_TTL": 300
 }
 
 
@@ -194,11 +208,19 @@ def load_config():
         "PLAYER_INFO_BACKUP_INTERVAL_MONGO",
         "LAVALINK_RECONNECT_RETRIES",
         "QUEUE_MAX_ENTRIES",
+        "VOICE_CHANNEL_LATENCY_RECONNECT",
+        "DBCACHE_SIZE",
+        "DBCACHE_TTL",
+        "PLAYLIST_CACHE_SIZE",
+        "PLAYLIST_CACHE_TTL",
+        "SPOTIFY_PLAYLIST_EXTRA_PAGE_LIMIT",
     ]:
         try:
-            CONFIG[i] = int(CONFIG[i])
-        except ValueError:
-            raise Exception(f"Você usou uma configuração inválida! {i}: {CONFIG[i]}")
+            new_value = int(CONFIG[i])
+        except ValueError as e:
+            raise Exception(f"Você usou uma configuração inválida! {i}: {CONFIG[i]}\n{repr(e)}")
+
+        CONFIG[i] = new_value
 
     # converter strings que requer valor bool/nulo.
     for i in [
@@ -240,15 +262,22 @@ def load_config():
         "MESSAGE_CONTENT_INTENT",
 
         "USE_YTDL",
+        "PREFER_YOUTUBE_NATIVE_PLAYBACK",
+        "ONLY_USE_NATIVE_SEARCH_PROVIDERS",
+        "USE_YTM_TRACKINFO_SCROBBLE",
+        "PARTIALTRACK_FIRST",
+        "FORCE_USE_DEEZER_CLIENT",
         "SILENT_PUBLICBOT_WARNING",
     ]:
         if CONFIG[i] in (True, False, None):
             continue
 
         try:
-            CONFIG[i] = bools[CONFIG[i]]
-        except KeyError:
-            raise Exception(f"Você usou uma configuração inválida! {i}: {CONFIG[i]}")
+            new_value = bools[CONFIG[i]]
+        except KeyError as e:
+            raise Exception(f"Você usou uma configuração inválida! {i}: {CONFIG[i]}\n{repr(e)}")
+
+        CONFIG[i] = new_value
 
     CONFIG["RPC_SERVER"] = CONFIG["RPC_SERVER"].replace("$PORT", CONFIG.get("PORT") or environ.get("PORT", "80"))
 

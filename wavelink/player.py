@@ -123,13 +123,13 @@ class Track:
                  'uri',
                  'author',
                  'is_stream',
-                 'dead',
-                 'thumb')
+                 'dead')
 
     def __init__(self, id_, info: dict, query: str = None, *args, **kwargs):
         self.id = id_
         self.info = info
         self.query = query
+        self.info["pluginInfo"] = kwargs.get("pluginInfo", {})
 
         self.title = info.get('title', '')[:97]
         self.identifier = info.get('identifier', '')
@@ -139,16 +139,22 @@ class Track:
         self.uri = info.get('uri')
         self.author = info.get('author', '')[:97]
 
+        if self.ytid:
+            self.info["artworkUrl"] = f"https://img.youtube.com/vi/{self.ytid}/hqdefault.jpg"
+        elif arturl:=self.info["pluginInfo"].get("artworkUrl"):
+            self.info["artworkUrl"] = arturl
+        elif self.info.get("artworkUrl") is None:
+            self.info["artworkUrl"] = ""
+
         self.is_stream = info.get('isStream')
         self.dead = False
 
-        if self.ytid:
-            self.thumb = f"https://img.youtube.com/vi/{self.ytid}/hqdefault.jpg"
-        else:
-            self.thumb = None
-
     def __str__(self):
         return self.title
+
+    @property
+    def thumb(self):
+        return self.info["artworkUrl"]
 
     @property
     def is_dead(self):
@@ -203,13 +209,13 @@ class Player:
 
         self._voice_state = {}
 
-        self._temp_data = {}
-
         self.volume = 100
         self.paused = False
         self.current = None
         self._equalizer = Equalizer.flat()
         self.channel_id = None
+
+        self.auto_pause = False
 
     @property
     def equalizer(self):
@@ -310,10 +316,6 @@ class Player:
                 traceback.print_exc()
                 return
 
-            if self._temp_data:
-                data.update(self._temp_data.copy())
-                self._temp_data.clear()
-
             await self.node.update_player(self.guild_id, data=data)
 
     async def hook(self, event) -> None:
@@ -371,6 +373,13 @@ class Player:
 
         elif guild.voice_client.channel.id != channel_id:
             await guild.voice_client.move_to(channel)
+        else:
+            try:
+                player = self.bot.music.players[self.guild_id]
+            except KeyError:
+                return
+            if player._voice_state:
+                await player._dispatch_voice_update()
 
     async def disconnect(self, *, force: bool = False) -> None:
         """|coro|
@@ -389,7 +398,7 @@ class Player:
         self.channel_id = None
         await self._get_shard_socket(guild.shard_id).voice_state(self.guild_id, None)
 
-    async def play(self, track: Track, *, replace: bool = True, start: int = 0, end: int = 0, temp_id: str = None, **kwargs) -> None:
+    async def play(self, track: Track, *, replace: bool = True, start: int = 0, end: int = 0, **kwargs) -> None:
         """|coro|
 
         Play a WaveLink Track.
@@ -421,7 +430,7 @@ class Player:
             payload = {
                 'op': 'play',
                 'guildId': str(self.guild_id),
-                'track': temp_id or track.id,
+                'track': kwargs.pop("temp_id", None) or track.id,
                 'noReplace': not replace,
                 'startTime': start,
             }
@@ -447,7 +456,7 @@ class Player:
                 pause = self.paused
 
             payload = {
-                "encodedTrack": temp_id or track.id,
+                "encodedTrack": kwargs.pop("temp_id", None) or track.id,
                 "volume": vol,
                 "position": int(start),
                 "paused": pause,
@@ -650,10 +659,7 @@ class Player:
         self.node = node
         self.node.players[int(self.guild_id)] = self
 
-        if self._voice_state:
-            await self._dispatch_voice_update()
-
-        if self.current:
+        if self.current and not self.auto_pause:
             if self.node.version == 3:
                 await self.node._send(op='play', guildId=str(self.guild_id), track=self.current.id, startTime=int(self.position))
                 if self.paused:
@@ -669,6 +675,9 @@ class Player:
                 await self.node.update_player(self.guild_id, payload, replace=True)
 
             self.last_update = time.time() * 1000
+
+        if self._voice_state:
+            await self._dispatch_voice_update()
 
         if self.volume != 100 and self.node.version == 3:
             await self.node._send(op='volume', guildId=str(self.guild_id), volume=self.volume)
