@@ -20,5 +20,5 @@ regex
 syncedlyrics
 pylrc
 python-Levenshtein
-nodriver==0.32
+nodriver==0.37
 undetected-chromedriver==3.5.5
